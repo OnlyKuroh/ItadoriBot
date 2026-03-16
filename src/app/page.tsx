@@ -22,8 +22,8 @@ const FloatingElements = lazy(() =>
   import("@/components/ui/floating-elements").then((m) => ({ default: m.FloatingElements }))
 );
 
-const SukunaSlashes = lazy(() =>
-  import("@/components/ui/sukuna-slashes").then((m) => ({ default: m.SukunaSlashes }))
+const BlackLightning = lazy(() =>
+  import("@/components/ui/black-lightning").then((m) => ({ default: m.BlackLightning }))
 );
 
 export default function Home() {
@@ -45,10 +45,10 @@ export default function Home() {
         </Suspense>
       )}
 
-      {/* Sukuna Dismantle slash effect — cuts across the whole page */}
+      {/* Black Lightning effect — raios negros enormes vindo de baixo */}
       {!shouldReduceMotion && (
         <Suspense fallback={null}>
-          <SukunaSlashes />
+          <BlackLightning />
         </Suspense>
       )}
 

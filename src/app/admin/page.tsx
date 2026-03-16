@@ -1819,7 +1819,7 @@ const EVENT_DEFS = [
   },
 ];
 
-function TabEventos({ guilds, channels }: { guilds: Guild[]; channels: Channel[] }) {
+function TabEventos({ guilds, channels, roles }: { guilds: Guild[]; channels: Channel[]; roles: Role[] }) {
   const [guildId,    setGuildId]    = useState(guilds[0]?.id || "");
   const [config,     setConfig]     = useState<EventsState>({});
   const [saving,     setSaving]     = useState<string | null>(null);
@@ -1951,6 +1951,20 @@ function TabEventos({ guilds, channels }: { guilds: Guild[]; channels: Channel[]
                   <option value="">— Selecione um canal —</option>
                   {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
+              </div>
+
+              {/* Cargo para mencionar (@CARGO acima do embed) */}
+              <div>
+                <label className="text-[11px] text-bone/40 uppercase tracking-wider block mb-1">Cargo para Mencionar</label>
+                <select
+                  value={(conf.roleId as string) || ""}
+                  onChange={e => updateConf(def.key, { roleId: e.target.value })}
+                  className={cn(inputCls, "text-xs py-1.5")}
+                >
+                  <option value="">— Nenhum (não menciona) —</option>
+                  {roles.map(r => <option key={r.id} value={r.id} style={{ color: r.color }}>@{r.name}</option>)}
+                </select>
+                <p className="text-[10px] text-bone/30 mt-0.5">Ao enviar notícias, o bot vai marcar @cargo acima do embed. Também usado no painel /setnoticias.</p>
               </div>
 
               {/* Campos específicos */}
@@ -2275,7 +2289,7 @@ export default function AdminPage() {
         {/* Tab content */}
         {tab === "overview"   && <TabOverview stats={botStats} />}
         {tab === "embed"      && <TabEmbedBuilder channels={channels} guilds={guilds} />}
-        {tab === "eventos"    && <TabEventos channels={channels} guilds={guilds} />}
+        {tab === "eventos"    && <TabEventos channels={channels} guilds={guilds} roles={roles} />}
         {tab === "welcome"    && <TabWelcome channels={channels} guilds={guilds} />}
         {tab === "logs"       && <TabLogs channels={channels} guilds={guilds} />}
         {tab === "verificar"  && <TabVerificar channels={channels} guilds={guilds} roles={roles} />}
