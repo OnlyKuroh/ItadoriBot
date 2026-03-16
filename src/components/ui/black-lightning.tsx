@@ -18,6 +18,7 @@ interface BoltBranch {
   widthEnd: number;
   depth: number;
   branchDelay: number;
+  startTrim: number;
   highlight: boolean;
   children: BoltBranch[];
 }
@@ -39,6 +40,8 @@ interface Ember {
   life: number;
   maxLife: number;
   size: number;
+  rotation: number;
+  whiteHot: boolean;
 }
 
 interface AnimBurst {
@@ -58,7 +61,7 @@ type VisibleBranch = Pick<BoltBranch, "points" | "profile" | "widthStart" | "wid
 
 const OUTER_GLOW = "#ff1414";
 const SOLID_BLACK = "#020202";
-const INNER_WHITE = "rgba(255,255,255,0.78)";
+const INNER_WHITE = "rgba(255,255,255,0.46)";
 const ROOT_SPAWN_INTERVAL = 2.6;
 
 function rand(min: number, max: number) {
@@ -90,42 +93,39 @@ function easeOutCubic(t: number) {
   return 1 - (1 - t) ** 3;
 }
 
-function smoothPath(ctx: CanvasRenderingContext2D, points: Point[], close = false) {
+function tracePath(ctx: CanvasRenderingContext2D, points: Point[], close = false) {
   if (points.length < 2) return;
 
   ctx.beginPath();
   ctx.moveTo(points[0].x, points[0].y);
 
-  for (let i = 1; i < points.length - 1; i++) {
-    const current = points[i];
-    const next = points[i + 1];
-    ctx.quadraticCurveTo(current.x, current.y, (current.x + next.x) / 2, (current.y + next.y) / 2);
+  for (let i = 1; i < points.length; i++) {
+    const point = points[i];
+    ctx.lineTo(point.x, point.y);
   }
-
-  const last = points[points.length - 1];
-  ctx.lineTo(last.x, last.y);
 
   if (close) ctx.closePath();
 }
 
 function createOrganicSpine(start: Point, target: Point, chaos = 1) {
   const totalDist = distance(start, target);
-  const segments = Math.max(9, Math.min(24, Math.floor(totalDist / 48)));
+  const segments = Math.max(10, Math.min(26, Math.floor(totalDist / 42)));
   const points: Point[] = [start];
-  const sideBias = rand(-0.18, 0.18);
+  const sideBias = rand(-0.07, 0.07);
 
   let current = { ...start };
   let heading = angleBetween(start, target);
-  let angularVelocity = rand(-0.22, 0.22) * chaos;
+  let angularVelocity = rand(-0.16, 0.16) * chaos;
 
   for (let i = 1; i < segments; i++) {
     const t = i / segments;
     const targetAngle = angleBetween(current, target);
-    angularVelocity = angularVelocity * 0.64 + rand(-0.24, 0.24) * (1 - t * 0.45) * chaos;
-    heading = lerpAngle(heading, targetAngle, 0.16 + t * 0.16);
-    heading += angularVelocity + sideBias * (1 - t) * 0.45;
+    const kink = i % 2 === 0 ? rand(-0.1, 0.1) * chaos : 0;
+    angularVelocity = angularVelocity * 0.42 + rand(-0.3, 0.3) * (1 - t * 0.38) * chaos;
+    heading = lerpAngle(heading, targetAngle, 0.3 + t * 0.18);
+    heading += angularVelocity + kink + sideBias * (1 - t) * 0.24;
 
-    const step = (totalDist / segments) * rand(0.8, 1.18) * (1 + (1 - t) * 0.12);
+    const step = (totalDist / segments) * rand(0.78, 1.14);
     current = {
       x: current.x + Math.cos(heading) * step,
       y: current.y + Math.sin(heading) * step,
@@ -141,20 +141,20 @@ function createOrganicSpine(start: Point, target: Point, chaos = 1) {
 function createProfile(length: number) {
   const profile: BranchProfileNode[] = [];
 
-  let left = rand(0.9, 1.3);
-  let right = rand(0.72, 1.05);
-  let innerOffset = rand(-0.16, 0.18);
-  let innerWidth = rand(0.06, 0.12);
+  let left = rand(0.82, 1.02);
+  let right = rand(0.78, 0.98);
+  let innerOffset = rand(-0.08, 0.08);
+  let innerWidth = rand(0.035, 0.075);
 
   for (let i = 0; i < length; i++) {
     const t = i / Math.max(1, length - 1);
 
-    left = clamp(left + rand(-0.11, 0.11), 0.72, 1.45);
-    right = clamp(right + rand(-0.1, 0.1), 0.58, 1.16);
-    innerOffset = clamp(innerOffset + rand(-0.045, 0.045), -0.24, 0.24);
-    innerWidth = clamp(innerWidth + rand(-0.018, 0.018), 0.04, 0.14);
+    left = clamp(left + rand(-0.06, 0.06), 0.72, 1.08);
+    right = clamp(right + rand(-0.06, 0.06), 0.68, 1.04);
+    innerOffset = clamp(innerOffset + rand(-0.02, 0.02), -0.14, 0.14);
+    innerWidth = clamp(innerWidth + rand(-0.01, 0.01), 0.025, 0.09);
 
-    const chunk = 1 + Math.sin(t * Math.PI * rand(1.4, 2.2)) * rand(0.05, 0.12);
+    const chunk = 1 + Math.sin(t * Math.PI * rand(1.6, 2.6)) * rand(0.015, 0.05);
 
     profile.push({
       leftScale: left * chunk,
@@ -213,29 +213,55 @@ function buildVisibleBranch(branch: BoltBranch, progress: number): VisibleBranch
   const clamped = clamp(progress, 0, 1);
   if (clamped <= 0) return null;
 
-  const steps = (branch.points.length - 1) * clamped;
-  const full = Math.floor(steps);
-  const frac = steps - full;
+  const startStep = (branch.points.length - 1) * branch.startTrim;
+  const endStep = (branch.points.length - 1) * clamped;
+  if (endStep <= startStep) return null;
 
-  const visiblePoints = branch.points.slice(0, Math.max(1, full + 1));
-  const visibleProfile = branch.profile.slice(0, Math.max(1, full + 1));
+  const startIndex = Math.floor(startStep);
+  const startFrac = startStep - startIndex;
+  const endIndex = Math.floor(endStep);
+  const endFrac = endStep - endIndex;
+  const visiblePoints: Point[] = [];
+  const visibleProfile: BranchProfileNode[] = [];
 
-  if (frac > 0 && full + 1 < branch.points.length) {
-    const from = branch.points[full];
-    const to = branch.points[full + 1];
-    const profileFrom = branch.profile[full];
-    const profileTo = branch.profile[full + 1];
+  const startFrom = branch.points[startIndex];
+  const startTo = branch.points[Math.min(startIndex + 1, branch.points.length - 1)];
+  const startProfileFrom = branch.profile[startIndex];
+  const startProfileTo = branch.profile[Math.min(startIndex + 1, branch.profile.length - 1)];
+
+  visiblePoints.push({
+    x: lerp(startFrom.x, startTo.x, startFrac),
+    y: lerp(startFrom.y, startTo.y, startFrac),
+  });
+
+  visibleProfile.push({
+    leftScale: lerp(startProfileFrom.leftScale, startProfileTo.leftScale, startFrac),
+    rightScale: lerp(startProfileFrom.rightScale, startProfileTo.rightScale, startFrac),
+    innerOffset: lerp(startProfileFrom.innerOffset, startProfileTo.innerOffset, startFrac),
+    innerWidth: lerp(startProfileFrom.innerWidth, startProfileTo.innerWidth, startFrac),
+  });
+
+  for (let i = startIndex + 1; i <= Math.min(endIndex, branch.points.length - 1); i++) {
+    visiblePoints.push(branch.points[i]);
+    visibleProfile.push(branch.profile[i]);
+  }
+
+  if (endFrac > 0 && endIndex + 1 < branch.points.length) {
+    const endFrom = branch.points[endIndex];
+    const endTo = branch.points[endIndex + 1];
+    const endProfileFrom = branch.profile[endIndex];
+    const endProfileTo = branch.profile[endIndex + 1];
 
     visiblePoints.push({
-      x: lerp(from.x, to.x, frac),
-      y: lerp(from.y, to.y, frac),
+      x: lerp(endFrom.x, endTo.x, endFrac),
+      y: lerp(endFrom.y, endTo.y, endFrac),
     });
 
     visibleProfile.push({
-      leftScale: lerp(profileFrom.leftScale, profileTo.leftScale, frac),
-      rightScale: lerp(profileFrom.rightScale, profileTo.rightScale, frac),
-      innerOffset: lerp(profileFrom.innerOffset, profileTo.innerOffset, frac),
-      innerWidth: lerp(profileFrom.innerWidth, profileTo.innerWidth, frac),
+      leftScale: lerp(endProfileFrom.leftScale, endProfileTo.leftScale, endFrac),
+      rightScale: lerp(endProfileFrom.rightScale, endProfileTo.rightScale, endFrac),
+      innerOffset: lerp(endProfileFrom.innerOffset, endProfileTo.innerOffset, endFrac),
+      innerWidth: lerp(endProfileFrom.innerWidth, endProfileTo.innerWidth, endFrac),
     });
   }
 
@@ -253,14 +279,14 @@ function buildVisibleBranch(branch: BoltBranch, progress: number): VisibleBranch
 function createInkBlots(impact: Point, count: number) {
   return Array.from({ length: count }, () => {
     const angle = rand(0, Math.PI * 2);
-    const radius = rand(22, 180);
+    const radius = rand(14, 88);
     return {
       x: impact.x + Math.cos(angle) * radius,
-      y: impact.y + Math.sin(angle) * radius * rand(0.45, 1.2),
-      rx: rand(6, 18),
-      ry: rand(2.5, 9),
+      y: impact.y + Math.sin(angle) * radius * rand(0.4, 0.92),
+      rx: rand(3, 10),
+      ry: rand(1.4, 5.2),
       rotation: rand(0, Math.PI * 2),
-      alpha: rand(0.18, 0.55),
+      alpha: rand(0.14, 0.34),
     };
   });
 }
@@ -271,7 +297,8 @@ function createBranch(
   widthStart: number,
   widthEnd: number,
   depth: number,
-  branchDelay: number
+  branchDelay: number,
+  startTrim: number
 ): BoltBranch {
   const points = createOrganicSpine(start, target, depth === 0 ? 1.2 : 0.95);
   return {
@@ -281,7 +308,8 @@ function createBranch(
     widthEnd,
     depth,
     branchDelay,
-    highlight: depth <= 1 && Math.random() > 0.42,
+    startTrim,
+    highlight: depth <= 1 && Math.random() > 0.76,
     children: [],
   };
 }
@@ -290,19 +318,19 @@ function addChildren(branch: BoltBranch, maxDepth: number, viewport: { w: number
   if (branch.depth >= maxDepth) return;
 
   const points = branch.points;
-  const childCount = branch.depth === 0 ? Math.floor(rand(2, 5)) : Math.floor(rand(1, 3));
+  const childCount = branch.depth === 0 ? Math.floor(rand(1, 3)) : Math.floor(rand(0, 2));
   const sideBias = Math.random() > 0.5 ? 1 : -1;
 
   for (let i = 0; i < childCount; i++) {
-    const t = rand(0.18, 0.68);
+    const t = rand(0.26, 0.82);
     const index = Math.max(1, Math.min(points.length - 2, Math.floor((points.length - 1) * t)));
     const origin = points[index];
     const next = points[index + 1];
     const tangent = angleBetween(origin, next);
     const side = Math.random() > 0.22 ? sideBias : -sideBias;
-    const childAngle = tangent + side * rand(0.48, 1.08) + rand(-0.16, 0.16);
+    const childAngle = tangent + side * rand(0.24, 0.52) + rand(-0.08, 0.08);
     const parentReach = distance(points[0], points[points.length - 1]);
-    const length = parentReach * rand(0.26, 0.52) * (branch.depth === 0 ? 1 : 0.72);
+    const length = parentReach * rand(0.14, 0.28) * (branch.depth === 0 ? 1 : 0.68);
     const target = {
       x: clamp(origin.x + Math.cos(childAngle) * length, -viewport.w * 0.08, viewport.w * 1.08),
       y: clamp(origin.y + Math.sin(childAngle) * length, -viewport.h * 0.08, viewport.h * 1.08),
@@ -312,10 +340,11 @@ function addChildren(branch: BoltBranch, maxDepth: number, viewport: { w: number
     const child = createBranch(
       origin,
       target,
-      widthAtOrigin * rand(0.42, 0.62),
-      Math.max(0.7, widthAtOrigin * rand(0.05, 0.14)),
+      widthAtOrigin * rand(0.22, 0.34),
+      Math.max(0.32, widthAtOrigin * rand(0.025, 0.06)),
       branch.depth + 1,
-      branch.branchDelay + rand(0.08, 0.18)
+      branch.branchDelay + rand(0.08, 0.18),
+      rand(0.02, 0.06)
     );
 
     branch.children.push(child);
@@ -325,31 +354,47 @@ function addChildren(branch: BoltBranch, maxDepth: number, viewport: { w: number
 
 function createBurst(viewport: { w: number; h: number }): AnimBurst {
   const impact = {
-    x: viewport.w * rand(0.32, 0.68),
-    y: viewport.h * rand(0.5, 0.8),
+    x: viewport.w * rand(0.46, 0.54),
+    y: viewport.h * rand(0.58, 0.76),
   };
 
   const roots: BoltBranch[] = [];
-  const rootCount = Math.floor(rand(4, 7));
-  const rootTargets = Array.from({ length: rootCount }, (_, index) => {
-    const side = index % 3;
-    if (side === 0) {
-      return { x: rand(-viewport.w * 0.02, viewport.w * 1.02), y: rand(-viewport.h * 0.12, viewport.h * 0.22) };
+  const rootCount = Math.floor(rand(5, 8));
+  const rootSources = Array.from({ length: rootCount }, (_, index) => {
+    const lane = index % 5;
+    if (lane === 0 || lane === 1) {
+      return {
+        x: rand(-viewport.w * 0.06, viewport.w * 1.06),
+        y: rand(-viewport.h * 0.34, -viewport.h * 0.12),
+      };
     }
-    if (side === 1) {
-      return { x: rand(-viewport.w * 0.14, viewport.w * 0.12), y: rand(viewport.h * 0.06, viewport.h * 0.92) };
+    if (lane === 2) {
+      return {
+        x: rand(-viewport.w * 0.28, -viewport.w * 0.1),
+        y: rand(viewport.h * 0.04, viewport.h * 0.78),
+      };
     }
-    return { x: rand(viewport.w * 0.88, viewport.w * 1.14), y: rand(viewport.h * 0.02, viewport.h * 0.94) };
+    if (lane === 3) {
+      return {
+        x: rand(viewport.w * 1.1, viewport.w * 1.28),
+        y: rand(viewport.h * 0.04, viewport.h * 0.78),
+      };
+    }
+    return {
+      x: rand(-viewport.w * 0.04, viewport.w * 1.04),
+      y: rand(viewport.h * 1.1, viewport.h * 1.24),
+    };
   });
 
-  for (const target of rootTargets) {
+  for (const source of rootSources) {
     const root = createBranch(
+      source,
       impact,
-      target,
-      rand(13, 26),
-      rand(0.8, 1.6),
+      rand(4.6, 8.2),
+      rand(0.42, 0.9),
       0,
-      rand(0, 0.05)
+      rand(0, 0.05),
+      rand(0.12, 0.2)
     );
 
     addChildren(root, 2, viewport);
@@ -359,7 +404,7 @@ function createBurst(viewport: { w: number; h: number }): AnimBurst {
   return {
     impact,
     roots,
-    inkBlots: createInkBlots(impact, Math.floor(rand(16, 28))),
+    inkBlots: createInkBlots(impact, Math.floor(rand(3, 7))),
     progress: 0,
     fadeOut: 0,
     delay: rand(0, 0.2),
@@ -387,34 +432,34 @@ function drawInkBlots(ctx: CanvasRenderingContext2D, burst: AnimBurst, fade: num
 }
 
 function drawImpactCore(ctx: CanvasRenderingContext2D, burst: AnimBurst, fade: number) {
-  const radius = 18 + burst.flash * 34;
+  const radius = 5 + burst.flash * 18;
 
   ctx.save();
-  ctx.globalAlpha = 0.22 * fade * burst.intensity;
+  ctx.globalAlpha = 0.14 * fade * burst.intensity;
   ctx.fillStyle = OUTER_GLOW;
   ctx.shadowColor = OUTER_GLOW;
-  ctx.shadowBlur = 42 + burst.flash * 32;
+  ctx.shadowBlur = 22 + burst.flash * 20;
   ctx.beginPath();
-  ctx.arc(burst.impact.x, burst.impact.y, radius * 1.05, 0, Math.PI * 2);
+  ctx.arc(burst.impact.x, burst.impact.y, radius * 0.9, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
   ctx.save();
-  ctx.globalAlpha = 0.98 * fade;
+  ctx.globalAlpha = 0.88 * fade;
   ctx.fillStyle = SOLID_BLACK;
   ctx.beginPath();
-  ctx.arc(burst.impact.x, burst.impact.y, radius * 0.68, 0, Math.PI * 2);
+  ctx.arc(burst.impact.x, burst.impact.y, radius * 0.42, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
   ctx.save();
-  ctx.globalAlpha = 0.24 * fade;
+  ctx.globalAlpha = 0.16 * fade;
   ctx.strokeStyle = INNER_WHITE;
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = 1;
   ctx.shadowColor = "#ffffff";
-  ctx.shadowBlur = 10;
+  ctx.shadowBlur = 7;
   ctx.beginPath();
-  ctx.arc(burst.impact.x, burst.impact.y, radius * 0.34, 0.12, Math.PI * 1.42);
+  ctx.arc(burst.impact.x, burst.impact.y, radius * 0.22, 0.12, Math.PI * 1.42);
   ctx.stroke();
   ctx.restore();
 }
@@ -429,30 +474,45 @@ function drawBranchSilhouette(
   if (outline.length < 4) return;
 
   ctx.save();
-  ctx.globalAlpha = 0.78 * alpha;
+  ctx.globalAlpha = 0.6 * alpha;
+  ctx.strokeStyle = OUTER_GLOW;
+  ctx.lineWidth = 2.2 + glowBoost * 0.9;
+  ctx.lineJoin = "miter";
+  ctx.miterLimit = 3;
   ctx.shadowColor = OUTER_GLOW;
-  ctx.shadowBlur = 24 + glowBoost * 18;
-  ctx.fillStyle = SOLID_BLACK;
-  smoothPath(ctx, outline, true);
-  ctx.fill();
+  ctx.shadowBlur = 18 + glowBoost * 14;
+  tracePath(ctx, outline, true);
+  ctx.stroke();
   ctx.restore();
 
   ctx.save();
   ctx.globalAlpha = 0.97 * alpha;
   ctx.fillStyle = SOLID_BLACK;
-  smoothPath(ctx, outline, true);
+  tracePath(ctx, outline, true);
   ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = 0.42 * alpha;
+  ctx.strokeStyle = "#ff3030";
+  ctx.lineWidth = 1.15;
+  ctx.lineJoin = "miter";
+  ctx.miterLimit = 3;
+  ctx.shadowColor = OUTER_GLOW;
+  ctx.shadowBlur = 8;
+  tracePath(ctx, outline, true);
+  ctx.stroke();
   ctx.restore();
 
   if (!branch.highlight || inner.length < 3) return;
 
   ctx.save();
-  smoothPath(ctx, outline, true);
+  tracePath(ctx, outline, true);
   ctx.clip();
-  ctx.globalAlpha = 0.48 * alpha;
+  ctx.globalAlpha = 0.18 * alpha;
   ctx.strokeStyle = INNER_WHITE;
   ctx.shadowColor = "#ffffff";
-  ctx.shadowBlur = 9;
+  ctx.shadowBlur = 6;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.beginPath();
@@ -511,7 +571,9 @@ export function BlackLightning() {
         vy: Math.sin(angle) * speed,
         life: 1,
         maxLife: rand(0.28, 0.62),
-        size: rand(1.8, 5.4),
+        size: rand(1.2, 3.1),
+        rotation: rand(0, Math.PI),
+        whiteHot: Math.random() > 0.88,
       });
     }
   }, []);
@@ -623,11 +685,11 @@ export function BlackLightning() {
         ctx.shadowBlur = 14;
         ctx.fillStyle = SOLID_BLACK;
         ctx.beginPath();
-        ctx.ellipse(ember.x, ember.y, ember.size, ember.size * 0.6, rand(0, Math.PI), 0, Math.PI * 2);
+        ctx.ellipse(ember.x, ember.y, ember.size, ember.size * 0.6, ember.rotation, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
 
-        if (Math.random() > 0.68) {
+        if (ember.whiteHot) {
           ctx.save();
           ctx.globalAlpha = 0.18 * alpha;
           ctx.shadowColor = "#ffffff";
