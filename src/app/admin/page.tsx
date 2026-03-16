@@ -2043,11 +2043,337 @@ function TabEventos({ guilds, channels, roles }: { guilds: Guild[]; channels: Ch
   );
 }
 
+// ─── Tab Notícias: Gerenciar painel de reaction roles ────────────────────────
+const NEWS_CATEGORIES = [
+  { key: 'anime', emoji: '🎌', label: 'Anime', color: 'text-blue-400' },
+  { key: 'noticias', emoji: '📰', label: 'Notícias', color: 'text-red-400' },
+  { key: 'politica_br', emoji: '🏛️', label: 'Política BR', color: 'text-green-400' },
+  { key: 'politica_mun', emoji: '🌍', label: 'Política Mundial', color: 'text-blue-500' },
+  { key: 'ia_news', emoji: '🤖', label: 'IA News', color: 'text-purple-400' },
+  { key: 'financeiro', emoji: '💹', label: 'Financeiro', color: 'text-emerald-400' },
+  { key: 'cotacao', emoji: '💱', label: 'Cotações', color: 'text-green-400' },
+  { key: 'google_news', emoji: '🔍', label: 'Google News', color: 'text-sky-400' },
+  { key: 'horoscopo', emoji: '♈', label: 'Horóscopo', color: 'text-purple-400' },
+  { key: 'steam', emoji: '🎮', label: 'Steam', color: 'text-slate-400' },
+  { key: 'eleicao', emoji: '🗳️', label: 'Eleições', color: 'text-amber-400' },
+];
+
+function TabNoticias({ guilds, channels, roles }: { guilds: Guild[]; channels: Channel[]; roles: Role[] }) {
+  const [guildId, setGuildId] = useState(guilds[0]?.id || "");
+  const [panelChannel, setPanelChannel] = useState<string | null>(null);
+  const [eventsConfig, setEventsConfig] = useState<Record<string, any>>({});
+  const [stats, setStats] = useState<Record<string, number>>({});
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Configurações de personalização
+  const [customTitle, setCustomTitle] = useState('📢 Inscreva-se nas Notícias');
+  const [customDesc, setCustomDesc] = useState('Reaja com os emojis abaixo para **receber ou remover** notificações de cada categoria.');
+  const [customColor, setCustomColor] = useState('#2b2d31');
+
+  useEffect(() => {
+    if (!guildId) return;
+
+    // Busca canal do painel
+    fetch(`${BOT_API}/api/news-panel/${guildId}`)
+      .then(r => r.json())
+      .then(data => {
+        setPanelChannel(data.channelId || null);
+        setEventsConfig(data.eventsConfig || {});
+      })
+      .catch(() => {});
+
+    // Busca estatísticas
+    fetch(`${BOT_API}/api/news-stats/${guildId}`)
+      .then(r => r.json())
+      .then(data => setStats(data.stats || {}))
+      .catch(() => {});
+  }, [guildId]);
+
+  const createPanel = async () => {
+    if (!panelChannel) {
+      setResult({ ok: false, msg: "Selecione um canal primeiro!" });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const r = await fetch(`${BOT_API}/api/news-panel/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          guildId,
+          channelId: panelChannel,
+          customTitle,
+          customDesc,
+          customColor,
+        }),
+      });
+      const data = await r.json();
+      setResult(data.success
+        ? { ok: true, msg: "✅ Painel criado com sucesso!" }
+        : { ok: false, msg: data.error || "Erro ao criar painel." }
+      );
+    } catch {
+      setResult({ ok: false, msg: "Bot offline." });
+    }
+    setLoading(false);
+    setTimeout(() => setResult(null), 4000);
+  };
+
+  const removePanel = async () => {
+    if (!confirm("Tem certeza que deseja remover o painel de notícias?")) return;
+
+    setLoading(true);
+    try {
+      const r = await fetch(`${BOT_API}/api/news-panel/remove`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guildId }),
+      });
+      const data = await r.json();
+      setResult(data.success
+        ? { ok: true, msg: "✅ Painel removido!" }
+        : { ok: false, msg: data.error || "Erro ao remover." }
+      );
+      if (data.success) setPanelChannel(null);
+    } catch {
+      setResult({ ok: false, msg: "Bot offline." });
+    }
+    setLoading(false);
+    setTimeout(() => setResult(null), 4000);
+  };
+
+  const activeCategories = NEWS_CATEGORIES.filter(cat => {
+    const conf = eventsConfig[cat.key];
+    return conf?.enabled && conf?.roleId;
+  });
+
+  const totalSubscribers = Object.values(stats).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+
+  return (
+    <div className="space-y-6">
+      {/* Seletor de servidor */}
+      {guilds.length > 1 && (
+        <div className="max-w-xs">
+          <select value={guildId} onChange={e => setGuildId(e.target.value)} className={inputCls}>
+            {guilds.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </div>
+      )}
+
+      {/* Info Banner */}
+      <div className="flex items-start gap-3 p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-300 text-sm">
+        <Newspaper className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="font-semibold mb-1">Painel de Inscrição de Notícias</p>
+          <p className="text-blue-300/70 text-xs leading-relaxed">
+            Crie um painel com reações onde os membros podem se inscrever em categorias de notícias.
+            Configure primeiro os cargos na aba <strong>Eventos</strong>.
+          </p>
+        </div>
+      </div>
+
+      {/* Status do Painel */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="p-4 rounded-xl bg-white/3 border border-white/8">
+          <div className="flex items-center gap-2 mb-3">
+            <Radio className="w-5 h-5 text-crimson" />
+            <span className="font-semibold text-bone">Status do Painel</span>
+          </div>
+          {panelChannel ? (
+            <div className="space-y-2">
+              <p className="text-sm text-emerald-400">✅ Painel ativo em <span className="font-mono">#{channels.find(c => c.id === panelChannel)?.name || "canal-deletado"}</span></p>
+              <p className="text-xs text-bone/50">Membros podem reagir aos emojis para se inscrever.</p>
+            </div>
+          ) : (
+            <p className="text-sm text-bone/40">❌ Nenhum painel ativo no momento.</p>
+          )}
+        </div>
+
+        <div className="p-4 rounded-xl bg-white/3 border border-white/8">
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="w-5 h-5 text-crimson" />
+            <span className="font-semibold text-bone">Estatísticas</span>
+          </div>
+          <div className="space-y-1">
+            <p className="text-2xl font-bold text-bone">{totalSubscribers}</p>
+            <p className="text-xs text-bone/50">Total de inscrições em todas as categorias</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Estatísticas por Categoria */}
+      {activeCategories.length > 0 && (
+        <div className="p-4 rounded-xl bg-white/3 border border-white/8">
+          <h3 className="font-semibold text-bone mb-4 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-crimson" />
+            Inscritos por Categoria
+          </h3>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {activeCategories.map(cat => {
+              const count = stats[cat.key] || 0;
+              const conf = eventsConfig[cat.key];
+              const role = roles.find(r => r.id === conf?.roleId);
+
+              return (
+                <div key={cat.key} className="p-3 rounded-lg bg-white/5 border border-white/5">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{cat.emoji}</span>
+                      <span className="text-sm font-medium text-bone">{cat.label}</span>
+                    </div>
+                    <span className="text-lg font-bold text-crimson">{count}</span>
+                  </div>
+                  {role && (
+                    <p className="text-[10px] text-bone/40">Cargo: <span style={{ color: role.color }}>@{role.name}</span></p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Personalização */}
+      <div className="p-4 rounded-xl bg-white/3 border border-white/8">
+        <h3 className="font-semibold text-bone mb-4 flex items-center gap-2">
+          <Send className="w-5 h-5 text-crimson" />
+          Personalizar Embed
+        </h3>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-bone/50 block mb-1">Título</label>
+            <input
+              type="text"
+              value={customTitle}
+              onChange={(e) => setCustomTitle(e.target.value)}
+              className={inputCls}
+              placeholder="📢 Inscreva-se nas Notícias"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-bone/50 block mb-1">Descrição</label>
+            <textarea
+              value={customDesc}
+              onChange={(e) => setCustomDesc(e.target.value)}
+              className={cn(inputCls, "min-h-[80px]")}
+              placeholder="Reaja com os emojis abaixo..."
+            />
+          </div>
+          <div>
+            <label className="text-xs text-bone/50 block mb-1">Cor (hex)</label>
+            <div className="flex gap-2">
+              <input
+                type="color"
+                value={customColor}
+                onChange={(e) => setCustomColor(e.target.value)}
+                className="w-12 h-10 rounded cursor-pointer"
+              />
+              <input
+                type="text"
+                value={customColor}
+                onChange={(e) => setCustomColor(e.target.value)}
+                className={cn(inputCls, "flex-1")}
+                placeholder="#2b2d31"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Preview */}
+      <div className="p-4 rounded-xl bg-white/3 border border-white/8">
+        <h3 className="font-semibold text-bone mb-4 flex items-center gap-2">
+          <Eye className="w-5 h-5 text-crimson" />
+          Preview
+        </h3>
+        <div className="rounded-lg p-4" style={{ backgroundColor: '#2B2D31', borderLeft: `4px solid ${customColor}` }}>
+          <div className="mb-3">
+            <h4 className="text-white font-semibold text-lg mb-2">{customTitle || "Título"}</h4>
+            <p className="text-sm text-gray-300">{customDesc || "Descrição"}</p>
+          </div>
+          {activeCategories.length > 0 && (
+            <div className="mt-4 space-y-1">
+              {activeCategories.map(cat => {
+                const conf = eventsConfig[cat.key];
+                return (
+                  <p key={cat.key} className="text-sm text-bone/70">
+                    {cat.emoji} <strong>{cat.label}</strong> → <span className="text-crimson">@{roles.find(r => r.id === conf?.roleId)?.name || "cargo"}</span>
+                  </p>
+                );
+              })}
+            </div>
+          )}
+          <div className="mt-4 pt-3 border-t border-white/10">
+            <p className="text-[10px] text-bone/40">Reaja novamente para remover • Engrenagem Itadori</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Mensagem de resultado */}
+      {result && (
+        <div className={cn(
+          "p-3 rounded-lg text-sm font-medium",
+          result.ok ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"
+        )}>
+          {result.msg}
+        </div>
+      )}
+
+      {/* Ações */}
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <label className="text-xs text-bone/50 block mb-2">Canal do Painel</label>
+          <select
+            value={panelChannel || ""}
+            onChange={e => setPanelChannel(e.target.value)}
+            className={inputCls}
+          >
+            <option value="">— Selecione um canal —</option>
+            {channels.map(c => <option key={c.id} value={c.id}>#{c.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        <button
+          onClick={createPanel}
+          disabled={loading || !panelChannel || activeCategories.length === 0}
+          className="flex-1 py-3 bg-crimson rounded-lg text-white font-semibold hover:bg-crimson/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {loading ? "Criando..." : panelChannel === null ? "🎨 Criar Painel" : "🔄 Recriar Painel"}
+        </button>
+
+        {panelChannel && (
+          <button
+            onClick={removePanel}
+            disabled={loading}
+            className="px-6 py-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 font-semibold hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+          >
+            🗑️ Remover
+          </button>
+        )}
+      </div>
+
+      {activeCategories.length === 0 && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm">
+          <p className="font-semibold mb-1">⚠️ Nenhuma categoria ativa</p>
+          <p className="text-amber-300/70 text-xs">
+            Vá para a aba <strong>Eventos</strong> e configure pelo menos uma categoria com cargo antes de criar o painel.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Admin Page Shell ─────────────────────────────────────────────────────────
 const TABS = [
   { id: "overview",   label: "Visão Geral",   icon: <Zap className="w-4 h-4" /> },
   { id: "embed",      label: "Embed Builder", icon: <Send className="w-4 h-4" /> },
   { id: "eventos",    label: "Eventos",       icon: <Radio className="w-4 h-4" /> },
+  { id: "noticias",   label: "Notícias",      icon: <Newspaper className="w-4 h-4" /> },
   { id: "welcome",    label: "Boas-Vindas",   icon: <Users className="w-4 h-4" /> },
   { id: "logs",       label: "Set Logs",      icon: <Bell className="w-4 h-4" /> },
   { id: "verificar",  label: "Verificação",   icon: <Shield className="w-4 h-4" /> },
@@ -2290,6 +2616,7 @@ export default function AdminPage() {
         {tab === "overview"   && <TabOverview stats={botStats} />}
         {tab === "embed"      && <TabEmbedBuilder channels={channels} guilds={guilds} />}
         {tab === "eventos"    && <TabEventos channels={channels} guilds={guilds} roles={roles} />}
+        {tab === "noticias"   && <TabNoticias channels={channels} guilds={guilds} roles={roles} />}
         {tab === "welcome"    && <TabWelcome channels={channels} guilds={guilds} />}
         {tab === "logs"       && <TabLogs channels={channels} guilds={guilds} />}
         {tab === "verificar"  && <TabVerificar channels={channels} guilds={guilds} roles={roles} />}
