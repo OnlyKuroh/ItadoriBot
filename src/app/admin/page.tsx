@@ -8,10 +8,11 @@ import {
   ToggleLeft, ToggleRight, Copy, Eye, EyeOff, ArrowLeft,
   Bell, Shield, UserPlus, Bot, Activity, Clock, Terminal,
   Radio, Newspaper, TrendingUp, Gamepad2, Calendar, Search,
+  LogOut, Lock, User as UserIcon,
 } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 
-const BOT_API = "http://localhost:3001";
+const BOT_API = process.env.NEXT_PUBLIC_BOT_API || "http://localhost:3001";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Channel { id: string; name: string; }
@@ -2009,8 +2010,132 @@ const TABS = [
   { id: "botconfig",  label: "Bot",           icon: <Bot className="w-4 h-4" /> },
 ];
 
+// ─── Credenciais ──────────────────────────────────────────────────────────────
+const AUTH_USER = "AthilaCabrall";
+const AUTH_PASS = "HaskudaoFtw1!";
+const AUTH_KEY  = "itadori_admin_auth";
+
+// ─── Tela de Login ────────────────────────────────────────────────────────────
+function LoginScreen({ onLogin }: { onLogin: () => void }) {
+  const [user, setUser]   = useState("");
+  const [pass, setPass]   = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [error, setError] = useState("");
+  const [shaking, setShaking] = useState(false);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (user === AUTH_USER && pass === AUTH_PASS) {
+      localStorage.setItem(AUTH_KEY, "1");
+      onLogin();
+    } else {
+      setError("Usuário ou senha incorretos.");
+      setShaking(true);
+      setTimeout(() => setShaking(false), 600);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-[#08080A] flex items-center justify-center px-4">
+      {/* Background glow */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-crimson/5 blur-[120px]" />
+      </div>
+
+      <div
+        className={cn(
+          "relative w-full max-w-sm bg-[#111113] border border-white/8 rounded-2xl p-8 shadow-2xl transition-transform",
+          shaking && "animate-[shake_0.4s_ease-in-out]"
+        )}
+        style={shaking ? { animation: "shake 0.4s ease-in-out" } : {}}
+      >
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-crimson flex items-center justify-center mb-3 shadow-lg shadow-crimson/30">
+            <Lock className="w-7 h-7 text-white" />
+          </div>
+          <h1 className="font-bebas text-3xl tracking-wider text-bone">
+            Itadori <span className="text-crimson">Admin</span>
+          </h1>
+          <p className="text-bone/40 text-sm mt-1">Acesso restrito</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Username */}
+          <div>
+            <label className="text-xs text-bone/50 font-medium mb-1.5 block">Usuário</label>
+            <div className="relative">
+              <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bone/30" />
+              <input
+                type="text"
+                value={user}
+                onChange={e => { setUser(e.target.value); setError(""); }}
+                placeholder="Usuário"
+                autoComplete="username"
+                className="w-full pl-9 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-bone placeholder-bone/30 focus:outline-none focus:border-crimson/60 focus:bg-white/8 transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* Password */}
+          <div>
+            <label className="text-xs text-bone/50 font-medium mb-1.5 block">Senha</label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bone/30" />
+              <input
+                type={showPass ? "text" : "password"}
+                value={pass}
+                onChange={e => { setPass(e.target.value); setError(""); }}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                className="w-full pl-9 pr-10 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-bone placeholder-bone/30 focus:outline-none focus:border-crimson/60 focus:bg-white/8 transition-colors"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass(s => !s)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-bone/30 hover:text-bone/70 transition-colors"
+              >
+                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="flex items-center gap-2 text-red-400 text-xs bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              {error}
+            </div>
+          )}
+
+          {/* Submit */}
+          <button
+            type="submit"
+            className="w-full py-2.5 bg-crimson hover:bg-crimson/90 text-white font-semibold rounded-lg text-sm transition-colors shadow-lg shadow-crimson/20 mt-2"
+          >
+            Entrar
+          </button>
+        </form>
+      </div>
+
+      <style>{`
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          20%       { transform: translateX(-8px); }
+          40%       { transform: translateX(8px); }
+          60%       { transform: translateX(-6px); }
+          80%       { transform: translateX(6px); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function AdminPage() {
   const [mounted, setMounted] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
   const [tab, setTab] = useState("overview");
   const [channels, setChannels] = useState<Channel[]>([]);
   const [guilds, setGuilds] = useState<Guild[]>([]);
@@ -2021,6 +2146,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     setMounted(true);
+    setLoggedIn(localStorage.getItem(AUTH_KEY) === "1");
 
     // Fetch stats com retry
     const fetchStats = async () => {
@@ -2050,6 +2176,12 @@ export default function AdminPage() {
   }, []);
 
   if (!mounted) return null;
+  if (!loggedIn) return <LoginScreen onLogin={() => setLoggedIn(true)} />;
+
+  function handleLogout() {
+    localStorage.removeItem(AUTH_KEY);
+    setLoggedIn(false);
+  }
 
   return (
     <div className="min-h-screen bg-[#08080A] text-bone">
@@ -2070,9 +2202,19 @@ export default function AdminPage() {
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className={cn("w-2 h-2 rounded-full", online ? "bg-emerald-400" : "bg-red-500")} />
-            <span className="text-xs text-bone/40">{online ? "Bot Online" : "Bot Offline"}</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className={cn("w-2 h-2 rounded-full", online ? "bg-emerald-400" : "bg-red-500")} />
+              <span className="text-xs text-bone/40">{online ? "Bot Online" : "Bot Offline"}</span>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Sair"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-bone/50 hover:text-bone hover:bg-white/10 transition-colors text-xs"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Sair</span>
+            </button>
           </div>
         </div>
       </header>
