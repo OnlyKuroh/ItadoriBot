@@ -1707,6 +1707,47 @@ const EVENT_DEFS = [
     ],
   },
   {
+    key: "politica_br",
+    label: "🏛️ Política Brasileira",
+    desc: "Câmara, Senado, proposições e notícias de toda política brasileira. Puxa votações, projetos de lei e Google News.",
+    color: "border-green-600/30 bg-green-600/5",
+    badge: "Câmara + Senado + SerpAPI • A cada 3h",
+    icon: <Radio className="w-5 h-5 text-green-400" />,
+    fields: [
+      { key: "topicos", label: "Tópicos extras (vírgula separa)", type: "text" as const, placeholder: "ex: Lula, STF, Reforma Tributária" },
+    ],
+  },
+  {
+    key: "politica_mun",
+    label: "🌍 Política Mundial",
+    desc: "Notícias importantes de política global, geopolítica e relações internacionais via Google News.",
+    color: "border-blue-700/30 bg-blue-700/5",
+    badge: "SerpAPI • SERP_API_KEY no .env • A cada 4h",
+    icon: <Radio className="w-5 h-5 text-blue-500" />,
+    fields: [
+      { key: "topicos", label: "Tópicos (vírgula = busca separada)", type: "text" as const, placeholder: "ex: EUA eleições, Guerra Ucrânia, China Taiwan" },
+      { key: "frequencia", label: "Frequência (horas)", type: "select" as const, options: [
+        { value: "2", label: "2 horas" }, { value: "4", label: "4 horas" },
+        { value: "6", label: "6 horas" }, { value: "12", label: "12 horas" },
+      ]},
+    ],
+  },
+  {
+    key: "ia_news",
+    label: "🤖 IA & Inteligência Artificial",
+    desc: "Novidades sobre IA, LLMs, ChatGPT, Claude, Gemini e mais. Traduzido automaticamente para PT-BR.",
+    color: "border-purple-600/30 bg-purple-600/5",
+    badge: "SerpAPI • SERP_API_KEY no .env • A cada 4h",
+    icon: <Radio className="w-5 h-5 text-purple-400" />,
+    fields: [
+      { key: "topicos", label: "Tópicos (vírgula = busca separada)", type: "text" as const, placeholder: "ex: ChatGPT, Inteligência Artificial, Machine Learning" },
+      { key: "frequencia", label: "Frequência (horas)", type: "select" as const, options: [
+        { value: "2", label: "2 horas" }, { value: "4", label: "4 horas" },
+        { value: "6", label: "6 horas" }, { value: "12", label: "12 horas" },
+      ]},
+    ],
+  },
+  {
     key: "financeiro",
     label: "💹 Notícias Financeiras",
     desc: "Alertas de mercado com análise de sentimento",
@@ -1730,13 +1771,13 @@ const EVENT_DEFS = [
   },
   {
     key: "google_news",
-    label: "🔍 Google News",
-    desc: "Notícias sobre qualquer tópico via Google News",
+    label: "🔍 Google News Personalizado",
+    desc: "Notícias sobre qualquer tópico via Google News. Use vírgula para separar tópicos (cada um vira uma busca independente).",
     color: "border-sky-500/30 bg-sky-500/5",
     badge: "SerpAPI • SERP_API_KEY no .env",
     icon: <Search className="w-5 h-5 text-sky-400" />,
     fields: [
-      { key: "topico", label: "Tópico de busca", type: "text" as const, placeholder: "ex: Flamengo, Bitcoin, IA" },
+      { key: "topico", label: "Tópicos (vírgula = busca separada)", type: "text" as const, placeholder: "ex: Flamengo, Bitcoin, Inteligência Artificial, Comedia" },
       { key: "frequencia", label: "Frequência (horas)", type: "select" as const, options: [
         { value: "1", label: "1 hora" }, { value: "3", label: "3 horas" },
         { value: "6", label: "6 horas" }, { value: "12", label: "12 horas" },
@@ -1746,9 +1787,9 @@ const EVENT_DEFS = [
   {
     key: "horoscopo",
     label: "♈ Horóscopo Diário",
-    desc: "Previsões dos 12 signos traduzidas para PT-BR",
+    desc: "Previsões detalhadas dos 12 signos em PT-BR com número e cor da sorte, humor e compatibilidade.",
     color: "border-purple-500/30 bg-purple-500/5",
-    badge: "RapidAPI • RAPIDAPI_KEY no .env • Diário",
+    badge: "RapidAPI Zodiac • Diário",
     icon: <Calendar className="w-5 h-5 text-purple-400" />,
     fields: [
       { key: "hora", label: "Horário de envio", type: "time" as const, placeholder: "08:00" },
@@ -1764,15 +1805,6 @@ const EVENT_DEFS = [
     fields: [
       { key: "hora", label: "Horário de envio", type: "time" as const, placeholder: "12:00" },
     ],
-  },
-  {
-    key: "camara",
-    label: "🏛️ Câmara dos Deputados",
-    desc: "Alertas de novas votações plenárias em tempo real",
-    color: "border-indigo-500/30 bg-indigo-500/5",
-    badge: "API Câmara • Gratuito • A cada 4h",
-    icon: <Radio className="w-5 h-5 text-indigo-400" />,
-    fields: [],
   },
   {
     key: "eleicao",
