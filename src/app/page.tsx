@@ -22,6 +22,10 @@ const FloatingElements = lazy(() =>
   import("@/components/ui/floating-elements").then((m) => ({ default: m.FloatingElements }))
 );
 
+const SukunaSlashes = lazy(() =>
+  import("@/components/ui/sukuna-slashes").then((m) => ({ default: m.SukunaSlashes }))
+);
+
 export default function Home() {
   const shouldReduceMotion = useReducedMotion();
 
@@ -38,6 +42,13 @@ export default function Home() {
       {!shouldReduceMotion && (
         <Suspense fallback={null}>
           <FloatingElements />
+        </Suspense>
+      )}
+
+      {/* Sukuna Dismantle slash effect — cuts across the whole page */}
+      {!shouldReduceMotion && (
+        <Suspense fallback={null}>
+          <SukunaSlashes />
         </Suspense>
       )}
 

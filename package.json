@@ -19,6 +19,8 @@
     "@react-three/fiber": "^9.5.0",
     "axios": "^1.13.6",
     "clsx": "^2.1.1",
+    "discord-arts": "^0.7.1",
+    "djs-forge": "^1.0.0",
     "embla-carousel-autoplay": "^8.6.0",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.36.0",
