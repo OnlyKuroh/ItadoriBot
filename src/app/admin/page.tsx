@@ -14,9 +14,21 @@ import { io, Socket } from "socket.io-client";
 
 const BOT_API = process.env.NEXT_PUBLIC_BOT_API || "http://localhost:3001";
 
+// ─── Auth helper (token armazenado no localStorage) ───────────────────────────
+const TOKEN_KEY = "itadori_discord_token";
+let _token: string | null = null;
+
+function adminFetch(url: string, opts: RequestInit = {}): Promise<Response> {
+  if (!_token) return fetch(url, opts);
+  const h = new Headers(opts.headers as HeadersInit | undefined);
+  h.set("Authorization", `Bearer ${_token}`);
+  return fetch(url, { ...opts, headers: h });
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface Channel { id: string; name: string; }
 interface Guild { id: string; name: string; icon: string | null; memberCount: number; }
+interface DiscordUser { userId: string; username: string; avatar: string | null; }
 interface Role { id: string; name: string; color: string; }
 interface Command {
   name: string; description: string; category: string;
@@ -406,7 +418,7 @@ function TabOverview({ stats }: { stats: Record<string, unknown> | null }) {
 
   useEffect(() => {
     // Fetch initial logs
-    fetch(`${BOT_API}/api/logs`)
+    adminFetch(`${BOT_API}/api/logs`)
       .then(r => r.json())
       .then((data: LogEntry[]) => setLogs(data.slice(0, 20)))
       .catch(() => {});
@@ -595,7 +607,7 @@ function TabEmbedBuilder({ channels, guilds }: { channels: Channel[]; guilds: Gu
     const fd = new FormData();
     fd.append("file", file);
     try {
-      const r = await fetch(`${BOT_API}/api/upload`, { method: "POST", body: fd });
+      const r = await adminFetch(`${BOT_API}/api/upload`, { method: "POST", body: fd });
       const d = await r.json();
       if (d.url) set("image", d.url);
     } catch { /* ignore */ }
@@ -606,7 +618,7 @@ function TabEmbedBuilder({ channels, guilds }: { channels: Channel[]; guilds: Gu
     if (!channelId) { setResult({ ok: false, msg: "Selecione um canal." }); return; }
     setSending(true); setResult(null);
     try {
-      const r = await fetch(`${BOT_API}/api/send-embed`, {
+      const r = await adminFetch(`${BOT_API}/api/send-embed`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -838,7 +850,7 @@ function TabWelcome({ channels, guilds }: { channels: Channel[]; guilds: Guild[]
 
   useEffect(() => {
     if (!guildId) return;
-    fetch(`${BOT_API}/api/welcome-config/${guildId}`)
+    adminFetch(`${BOT_API}/api/welcome-config/${guildId}`)
       .then(r => r.json()).then(setConfig).catch(() => {});
   }, [guildId]);
 
@@ -849,7 +861,7 @@ function TabWelcome({ channels, guilds }: { channels: Channel[]; guilds: Guild[]
     setUploading(true);
     const fd = new FormData(); fd.append("file", file);
     try {
-      const r = await fetch(`${BOT_API}/api/upload`, { method: "POST", body: fd });
+      const r = await adminFetch(`${BOT_API}/api/upload`, { method: "POST", body: fd });
       const d = await r.json();
       if (d.url) setConfig(prev => ({ ...prev, bannerUrl: d.url }));
     } catch { /* ignore */ }
@@ -862,7 +874,7 @@ function TabWelcome({ channels, guilds }: { channels: Channel[]; guilds: Guild[]
     }
     setSaving(true); setResult(null);
     try {
-      const r = await fetch(`${BOT_API}/api/welcome-config`, {
+      const r = await adminFetch(`${BOT_API}/api/welcome-config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ guildId, channelId: config.channelId, text: config.text, bannerUrl: config.bannerUrl }),
@@ -999,7 +1011,7 @@ function TabLogs({ channels, guilds }: { channels: Channel[]; guilds: Guild[] })
 
   useEffect(() => {
     if (!guildId) return;
-    fetch(`${BOT_API}/api/logs-config/${guildId}`)
+    adminFetch(`${BOT_API}/api/logs-config/${guildId}`)
       .then(r => r.json())
       .then((d: LogsConfig) => setConfig({ channelId: d.channelId ?? null, events: { ...DEFAULT_LOG_EVENTS, ...d.events } }))
       .catch(() => {});
@@ -1019,7 +1031,7 @@ function TabLogs({ channels, guilds }: { channels: Channel[]; guilds: Guild[] })
     }
     setSaving(true); setResult(null);
     try {
-      const r = await fetch(`${BOT_API}/api/logs-config`, {
+      const r = await adminFetch(`${BOT_API}/api/logs-config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ guildId, channelId: config.channelId, events: config.events }),
@@ -1147,7 +1159,7 @@ function TabVerificar({ channels, guilds, roles }: { channels: Channel[]; guilds
 
   useEffect(() => {
     if (!guildId) return;
-    fetch(`${BOT_API}/api/verify-config/${guildId}`)
+    adminFetch(`${BOT_API}/api/verify-config/${guildId}`)
       .then(r => r.json())
       .then((d: VerifyConfig) => setConfig({
         channelId: d.channelId ?? null,
@@ -1165,7 +1177,7 @@ function TabVerificar({ channels, guilds, roles }: { channels: Channel[]; guilds
     }
     setSaving(true); setResult(null);
     try {
-      const r = await fetch(`${BOT_API}/api/verify-config`, {
+      const r = await adminFetch(`${BOT_API}/api/verify-config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ guildId, ...config }),
@@ -1390,7 +1402,7 @@ function TabBotConfig({ guilds, channels }: { guilds: Guild[]; channels: Channel
 
   useEffect(() => {
     if (!guildId) return;
-    fetch(`${BOT_API}/api/guild-config/${guildId}`)
+    adminFetch(`${BOT_API}/api/guild-config/${guildId}`)
       .then(r => r.json())
       .then((d: { prefix: string; mentionResponse: string; nickname: string }) => {
         setNickname(d.nickname || "");
@@ -1398,7 +1410,7 @@ function TabBotConfig({ guilds, channels }: { guilds: Guild[]; channels: Channel
         setMentionResponse(d.mentionResponse || "");
       })
       .catch(() => {});
-    fetch(`${BOT_API}/api/channel-filter/${guildId}`)
+    adminFetch(`${BOT_API}/api/channel-filter/${guildId}`)
       .then(r => r.json())
       .then((d: { mode: "off" | "allow" | "deny"; channels: string[] }) => {
         setFilterMode(d.mode || "off");
@@ -1415,12 +1427,12 @@ function TabBotConfig({ guilds, channels }: { guilds: Guild[]; channels: Channel
     setSaving(true); setResult(null);
     try {
       const [r1, r2] = await Promise.all([
-        fetch(`${BOT_API}/api/guild-config`, {
+        adminFetch(`${BOT_API}/api/guild-config`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ guildId, nickname, prefix, mentionResponse }),
         }),
-        fetch(`${BOT_API}/api/channel-filter`, {
+        adminFetch(`${BOT_API}/api/channel-filter`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ guildId, mode: filterMode, channels: filterChannels }),
@@ -1565,7 +1577,7 @@ function TabAutoRoles({ guilds, roles }: { guilds: Guild[]; roles: Role[] }) {
 
   useEffect(() => {
     if (!guildId) return;
-    fetch(`${BOT_API}/api/auto-roles/${guildId}`)
+    adminFetch(`${BOT_API}/api/auto-roles/${guildId}`)
       .then(r => r.json())
       .then((d: { roles: string[] }) => setSelectedRoles(d.roles || []))
       .catch(() => {});
@@ -1578,7 +1590,7 @@ function TabAutoRoles({ guilds, roles }: { guilds: Guild[]; roles: Role[] }) {
     if (!guildId) return;
     setSaving(true); setResult(null);
     try {
-      const r = await fetch(`${BOT_API}/api/auto-roles`, {
+      const r = await adminFetch(`${BOT_API}/api/auto-roles`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ guildId, roles: selectedRoles }),
@@ -1828,7 +1840,7 @@ function TabEventos({ guilds, channels, roles }: { guilds: Guild[]; channels: Ch
 
   useEffect(() => {
     if (!guildId) return;
-    fetch(`${BOT_API}/api/events-config/${guildId}`)
+    adminFetch(`${BOT_API}/api/events-config/${guildId}`)
       .then(r => r.json())
       .then((d: EventsState) => setConfig(d || {}))
       .catch(() => {});
@@ -1844,7 +1856,7 @@ function TabEventos({ guilds, channels, roles }: { guilds: Guild[]; channels: Ch
   const saveConf = async (key: string) => {
     setSaving(key);
     try {
-      const r = await fetch(`${BOT_API}/api/events-config`, {
+      const r = await adminFetch(`${BOT_API}/api/events-config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ guildId, eventKey: key, data: getConf(key) }),
@@ -1864,7 +1876,7 @@ function TabEventos({ guilds, channels, roles }: { guilds: Guild[]; channels: Ch
   const testEvent = async (key: string) => {
     setTesting(key);
     try {
-      const r = await fetch(`${BOT_API}/api/events-test`, {
+      const r = await adminFetch(`${BOT_API}/api/events-test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ guildId, eventKey: key }),
@@ -2075,7 +2087,7 @@ function TabNoticias({ guilds, channels, roles }: { guilds: Guild[]; channels: C
     if (!guildId) return;
 
     // Busca canal do painel
-    fetch(`${BOT_API}/api/news-panel/${guildId}`)
+    adminFetch(`${BOT_API}/api/news-panel/${guildId}`)
       .then(r => r.json())
       .then(data => {
         setPanelChannel(data.channelId || null);
@@ -2084,7 +2096,7 @@ function TabNoticias({ guilds, channels, roles }: { guilds: Guild[]; channels: C
       .catch(() => {});
 
     // Busca estatísticas
-    fetch(`${BOT_API}/api/news-stats/${guildId}`)
+    adminFetch(`${BOT_API}/api/news-stats/${guildId}`)
       .then(r => r.json())
       .then(data => setStats(data.stats || {}))
       .catch(() => {});
@@ -2098,7 +2110,7 @@ function TabNoticias({ guilds, channels, roles }: { guilds: Guild[]; channels: C
 
     setLoading(true);
     try {
-      const r = await fetch(`${BOT_API}/api/news-panel/create`, {
+      const r = await adminFetch(`${BOT_API}/api/news-panel/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2126,7 +2138,7 @@ function TabNoticias({ guilds, channels, roles }: { guilds: Guild[]; channels: C
 
     setLoading(true);
     try {
-      const r = await fetch(`${BOT_API}/api/news-panel/remove`, {
+      const r = await adminFetch(`${BOT_API}/api/news-panel/remove`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ guildId }),
@@ -2369,6 +2381,175 @@ function TabNoticias({ guilds, channels, roles }: { guilds: Guild[]; channels: C
 }
 
 // ─── Admin Page Shell ─────────────────────────────────────────────────────────
+// ─── Aba Servidores ───────────────────────────────────────────────────────────
+interface GuildInfo {
+  id: string;
+  name: string;
+  icon: string | null;
+  memberCount: number;
+}
+
+function TabServidores() {
+  const [guilds, setGuilds] = useState<GuildInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    fetch(`${BOT_API}/api/guilds-list`)
+      .then(r => r.json())
+      .then(data => { setGuilds(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const filtered = guilds.filter(g =>
+    g.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const totalMembers = guilds.reduce((a, g) => a + g.memberCount, 0);
+
+  return (
+    <div className="space-y-4">
+      {/* Header stats */}
+      <div className="flex gap-3 flex-wrap">
+        <div className="rounded-lg bg-black/30 border border-purple-800/40 px-4 py-2 text-sm">
+          <span className="text-gray-400">Servidores: </span>
+          <span className="text-white font-bold">{guilds.length}</span>
+        </div>
+        <div className="rounded-lg bg-black/30 border border-purple-800/40 px-4 py-2 text-sm">
+          <span className="text-gray-400">Membros totais: </span>
+          <span className="text-white font-bold">{totalMembers.toLocaleString('pt-BR')}</span>
+        </div>
+      </div>
+
+      {/* Search */}
+      <input
+        type="text"
+        placeholder="🔍 Buscar servidor..."
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        className="w-full bg-black/40 border border-purple-800/40 rounded-lg px-4 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+      />
+
+      {/* Grid */}
+      {loading ? (
+        <p className="text-gray-400 text-sm">Carregando servidores...</p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {filtered.map(g => (
+            <div key={g.id} className="rounded-xl border border-purple-800/30 bg-black/30 backdrop-blur p-4 flex flex-col items-center gap-2 hover:border-purple-500/50 transition-colors">
+              {g.icon ? (
+                <img src={g.icon} alt={g.name} className="w-14 h-14 rounded-full" />
+              ) : (
+                <div className="w-14 h-14 rounded-full bg-purple-900/50 flex items-center justify-center text-xl font-bold text-purple-300">
+                  {g.name.charAt(0)}
+                </div>
+              )}
+              <p className="text-sm font-semibold text-white text-center leading-tight line-clamp-2">{g.name}</p>
+              <p className="text-xs text-gray-400">👥 {g.memberCount.toLocaleString('pt-BR')}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Aba IA ───────────────────────────────────────────────────────────────────
+function TabIA({ guilds }: { guilds: Guild[] }) {
+  const [modEnabled, setModEnabled] = useState(false);
+  const [visionEnabled, setVisionEnabled] = useState(false);
+  const [action, setAction] = useState<"log" | "delete" | "timeout">("log");
+  const [toast, setToast] = useState("");
+  const [provider, setProvider] = useState<string>("groq");
+
+  useEffect(() => {
+    adminFetch(`${BOT_API}/api/ai-provider`)
+      .then(r => r.json())
+      .then(d => { if (d?.provider) setProvider(d.provider); })
+      .catch(() => {});
+  }, []);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
+  }
+
+  return (
+    <div className="space-y-6">
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-purple-700 text-white px-4 py-2 rounded-lg shadow-lg text-sm">
+          {toast}
+        </div>
+      )}
+
+      {/* Card provider */}
+      <div className="rounded-xl border border-purple-800/40 bg-black/30 backdrop-blur p-4 flex items-center gap-3">
+        <Activity className="w-5 h-5 text-purple-400" />
+        <div>
+          <p className="text-xs text-gray-400 uppercase tracking-wider">Provider de IA</p>
+          <p className="text-sm font-semibold text-white">
+            {provider === "ollama" ? "Ollama (local)" : "Groq API"}
+            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold ${provider === "ollama" ? "bg-green-700 text-green-100" : "bg-purple-700 text-purple-100"}`}>
+              {provider === "ollama" ? "Local • Ilimitado" : "Cloud • Rate limited"}
+            </span>
+          </p>
+        </div>
+      </div>
+
+      {/* Toggle moderação */}
+      <div className="rounded-xl border border-purple-800/40 bg-black/30 backdrop-blur p-5 space-y-4">
+        <h3 className="text-sm font-semibold text-purple-300 uppercase tracking-wider flex items-center gap-2">
+          <Shield className="w-4 h-4" /> Moderação com IA
+        </h3>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-white font-medium">Ativar Moderação com IA</p>
+            <p className="text-xs text-gray-400 mt-0.5">Analisa mensagens em tempo real usando {provider === "ollama" ? "Ollama local" : "Groq"}</p>
+          </div>
+          <button onClick={() => setModEnabled(v => !v)} className="focus:outline-none">
+            {modEnabled
+              ? <ToggleRight className="w-8 h-8 text-purple-400" />
+              : <ToggleLeft className="w-8 h-8 text-gray-500" />}
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-white font-medium">Analisar imagens</p>
+            <p className="text-xs text-gray-400 mt-0.5">Usa visão computacional ({provider === "ollama" ? "LLaVA local" : "Groq LLaVA"})</p>
+          </div>
+          <button onClick={() => setVisionEnabled(v => !v)} className="focus:outline-none">
+            {visionEnabled
+              ? <ToggleRight className="w-8 h-8 text-purple-400" />
+              : <ToggleLeft className="w-8 h-8 text-gray-500" />}
+          </button>
+        </div>
+
+        <div>
+          <label className="text-xs text-gray-400 uppercase tracking-wider block mb-1">Ação ao detectar conteúdo impróprio</label>
+          <select
+            value={action}
+            onChange={e => setAction(e.target.value as typeof action)}
+            className="w-full bg-black/50 border border-purple-800/40 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
+          >
+            <option value="log">Apenas registrar no log</option>
+            <option value="delete">Deletar mensagem</option>
+            <option value="timeout">Timeout 5 minutos</option>
+          </select>
+        </div>
+
+        <button
+          onClick={() => showToast("⚙️ Configuração de IA em breve!")}
+          className="w-full py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-white text-sm font-semibold transition-colors"
+        >
+          Salvar configurações
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const TABS = [
   { id: "overview",   label: "Visão Geral",   icon: <Zap className="w-4 h-4" /> },
   { id: "embed",      label: "Embed Builder", icon: <Send className="w-4 h-4" /> },
@@ -2380,180 +2561,368 @@ const TABS = [
   { id: "autoroles",  label: "Auto-Roles",    icon: <UserPlus className="w-4 h-4" /> },
   { id: "commands",   label: "Comandos",      icon: <Hash className="w-4 h-4" /> },
   { id: "botconfig",  label: "Bot",           icon: <Bot className="w-4 h-4" /> },
+  { id: "ia",         label: "IA",            icon: <Activity className="w-4 h-4" /> },
+  { id: "servidores", label: "Servidores",    icon: <Globe className="w-4 h-4" /> },
 ];
 
-// ─── Credenciais ──────────────────────────────────────────────────────────────
-const AUTH_USER = "AthilaCabrall";
-const AUTH_PASS = "HaskudaoFtw1!";
-const AUTH_KEY  = "itadori_admin_auth";
-
-// ─── Tela de Login ────────────────────────────────────────────────────────────
-function LoginScreen({ onLogin }: { onLogin: () => void }) {
-  const [user, setUser]   = useState("");
-  const [pass, setPass]   = useState("");
-  const [showPass, setShowPass] = useState(false);
+// ─── Tela de Login com Discord ────────────────────────────────────────────────
+function LoginScreen() {
   const [error, setError] = useState("");
-  const [shaking, setShaking] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (user === AUTH_USER && pass === AUTH_PASS) {
-      localStorage.setItem(AUTH_KEY, "1");
-      onLogin();
-    } else {
-      setError("Usuário ou senha incorretos.");
-      setShaking(true);
-      setTimeout(() => setShaking(false), 600);
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("error")) {
+      setError(
+        p.get("error") === "auth_failed"
+          ? "Falha na autenticação com o Discord. Tente novamente."
+          : "Ocorreu um erro. Tente novamente."
+      );
+      window.history.replaceState({}, "", "/admin");
     }
-  }
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#08080A] flex items-center justify-center px-4">
-      {/* Background glow */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-crimson/5 blur-[120px]" />
       </div>
 
-      <div
-        className={cn(
-          "relative w-full max-w-sm bg-[#111113] border border-white/8 rounded-2xl p-8 shadow-2xl transition-transform",
-          shaking && "animate-[shake_0.4s_ease-in-out]"
-        )}
-        style={shaking ? { animation: "shake 0.4s ease-in-out" } : {}}
-      >
+      <div className="relative w-full max-w-sm bg-[#111113] border border-white/8 rounded-2xl p-8 shadow-2xl">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-14 h-14 rounded-2xl bg-crimson flex items-center justify-center mb-3 shadow-lg shadow-crimson/30">
-            <Lock className="w-7 h-7 text-white" />
+            <Shield className="w-7 h-7 text-white" />
           </div>
           <h1 className="font-bebas text-3xl tracking-wider text-bone">
             Itadori <span className="text-crimson">Admin</span>
           </h1>
-          <p className="text-bone/40 text-sm mt-1">Acesso restrito</p>
+          <p className="text-bone/40 text-sm mt-1 text-center">
+            Entre com sua conta do Discord para gerenciar seus servidores
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Username */}
-          <div>
-            <label className="text-xs text-bone/50 font-medium mb-1.5 block">Usuário</label>
-            <div className="relative">
-              <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bone/30" />
-              <input
-                type="text"
-                value={user}
-                onChange={e => { setUser(e.target.value); setError(""); }}
-                placeholder="Usuário"
-                autoComplete="username"
-                className="w-full pl-9 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-bone placeholder-bone/30 focus:outline-none focus:border-crimson/60 focus:bg-white/8 transition-colors"
-              />
-            </div>
+        {error && (
+          <div className="flex items-center gap-2 text-red-400 text-xs bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2 mb-4">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+            {error}
           </div>
+        )}
 
-          {/* Password */}
-          <div>
-            <label className="text-xs text-bone/50 font-medium mb-1.5 block">Senha</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bone/30" />
-              <input
-                type={showPass ? "text" : "password"}
-                value={pass}
-                onChange={e => { setPass(e.target.value); setError(""); }}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                className="w-full pl-9 pr-10 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-bone placeholder-bone/30 focus:outline-none focus:border-crimson/60 focus:bg-white/8 transition-colors"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPass(s => !s)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-bone/30 hover:text-bone/70 transition-colors"
-              >
-                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
+        <a
+          href={`${BOT_API}/auth/discord`}
+          className="flex items-center justify-center gap-3 w-full py-3 bg-[#5865F2] hover:bg-[#4752c4] text-white font-semibold rounded-xl text-sm transition-colors shadow-lg shadow-[#5865F2]/20"
+        >
+          {/* Discord SVG logo */}
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.056a19.9 19.9 0 0 0 5.993 3.03.077.077 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03z"/>
+          </svg>
+          Entrar com Discord
+        </a>
 
-          {/* Error */}
-          {error && (
-            <div className="flex items-center gap-2 text-red-400 text-xs bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
-              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-              {error}
-            </div>
-          )}
-
-          {/* Submit */}
-          <button
-            type="submit"
-            className="w-full py-2.5 bg-crimson hover:bg-crimson/90 text-white font-semibold rounded-lg text-sm transition-colors shadow-lg shadow-crimson/20 mt-2"
-          >
-            Entrar
-          </button>
-        </form>
+        <p className="text-center text-bone/30 text-xs mt-4">
+          Você verá apenas servidores onde é administrador e o bot está presente
+        </p>
       </div>
-
-      <style>{`
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          20%       { transform: translateX(-8px); }
-          40%       { transform: translateX(8px); }
-          60%       { transform: translateX(-6px); }
-          80%       { transform: translateX(6px); }
-        }
-      `}</style>
     </div>
   );
 }
 
+// ─── Tela de Seleção de Servidor ──────────────────────────────────────────────
+function GuildPickerScreen({
+  guilds,
+  user,
+  onSelect,
+  onLogout,
+}: {
+  guilds: Guild[];
+  user: DiscordUser | null;
+  onSelect: (g: Guild) => void;
+  onLogout: () => void;
+}) {
+  const avatarUrl = user?.avatar
+    ? `https://cdn.discordapp.com/avatars/${user.userId}/${user.avatar}.webp?size=64`
+    : null;
+
+  return (
+    <div className="min-h-screen bg-[#08080A] flex flex-col items-center justify-center px-4 py-12">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-crimson/4 blur-[120px]" />
+      </div>
+
+      <div className="relative w-full max-w-lg">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="font-bebas text-3xl tracking-wider text-bone">
+              Selecione um <span className="text-crimson">Servidor</span>
+            </h1>
+            <p className="text-bone/40 text-sm mt-1">
+              Servidores onde você é administrador e o bot está presente
+            </p>
+          </div>
+          {user && (
+            <div className="flex items-center gap-3">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" className="w-8 h-8 rounded-full" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-crimson/30 flex items-center justify-center">
+                  <UserIcon className="w-4 h-4 text-crimson" />
+                </div>
+              )}
+              <button
+                onClick={onLogout}
+                className="text-bone/40 hover:text-bone transition-colors"
+                title="Sair"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {guilds.length === 0 ? (
+          <div className="text-center py-12 space-y-3">
+            <Globe className="w-12 h-12 text-bone/20 mx-auto" />
+            <p className="text-bone/50 font-medium">Nenhum servidor encontrado</p>
+            <p className="text-bone/30 text-sm max-w-xs mx-auto">
+              Você precisa ser administrador de um servidor que tenha o bot adicionado.
+            </p>
+            <a
+              href={`https://discord.com/api/oauth2/authorize?client_id=${process.env.NEXT_PUBLIC_CLIENT_ID}&permissions=8&scope=bot%20applications.commands`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 mt-2 px-4 py-2 bg-crimson/10 border border-crimson/20 text-crimson rounded-lg text-sm hover:bg-crimson/20 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Adicionar Bot ao Servidor
+            </a>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {guilds.map(guild => (
+              <button
+                key={guild.id}
+                onClick={() => onSelect(guild)}
+                className="w-full flex items-center gap-4 p-4 bg-white/3 border border-white/8 rounded-xl hover:border-crimson/30 hover:bg-white/5 transition-all group text-left"
+              >
+                {guild.icon ? (
+                  <img
+                    src={guild.icon}
+                    alt=""
+                    className="w-12 h-12 rounded-full flex-shrink-0"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-full bg-crimson/20 flex items-center justify-center flex-shrink-0">
+                    <span className="font-bebas text-crimson text-xl">{guild.name[0]}</span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-bone truncate">{guild.name}</p>
+                  <p className="text-xs text-bone/40">
+                    {guild.memberCount?.toLocaleString("pt-BR")} membros
+                  </p>
+                </div>
+                <ChevronDown className="w-4 h-4 text-bone/30 -rotate-90 group-hover:text-crimson transition-colors flex-shrink-0" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Botão de Criar Cargo Automático ──────────────────────────────────────────
+function AutoCreateRoleButton({
+  guildId,
+  roleName,
+  onCreated,
+}: {
+  guildId: string;
+  roleName: string;
+  onCreated: (roleId: string, roleName: string) => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function create() {
+    setLoading(true);
+    try {
+      const res = await adminFetch(`${BOT_API}/api/guild/${guildId}/roles/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: roleName }),
+      });
+      const data = await res.json();
+      if (data.id) {
+        onCreated(data.id, data.name);
+        setDone(true);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (done) return <span className="text-xs text-emerald-400">✓ Cargo criado</span>;
+
+  return (
+    <button
+      type="button"
+      onClick={create}
+      disabled={loading}
+      className="flex items-center gap-1 text-xs text-crimson/70 hover:text-crimson transition-colors disabled:opacity-50"
+    >
+      <Plus className="w-3 h-3" />
+      {loading ? "Criando..." : `Criar "${roleName}"`}
+    </button>
+  );
+}
+
+// (mantido apenas para compatibilidade de importação — não usado mais)
+function _unusedLoginCompat() {
+  const [showPass] = useState(false);
+  void showPass;
+  return null;
+}
+void _unusedLoginCompat;
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _keepImports = { Eye, EyeOff, Lock, UserIcon };
+void _keepImports;
+
+/* ─── (fim dos componentes de auth) ─────────────────────────────────────────── */
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
-  const [mounted, setMounted] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [tab, setTab] = useState("overview");
+  const [mounted, setMounted]               = useState(false);
+  const [authToken, setAuthToken]           = useState<string | null>(null);
+  const [discordUser, setDiscordUser]       = useState<DiscordUser | null>(null);
+  const [myGuilds, setMyGuilds]             = useState<Guild[]>([]);
+  const [selectedGuild, setSelectedGuild]   = useState<Guild | null>(null);
+
+  const [tab, setTab]         = useState("overview");
   const [channels, setChannels] = useState<Channel[]>([]);
-  const [guilds, setGuilds] = useState<Guild[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
+  const [roles, setRoles]       = useState<Role[]>([]);
   const [commands, setCommands] = useState<Command[]>([]);
   const [botStats, setBotStats] = useState<Record<string, unknown> | null>(null);
-  const [online, setOnline] = useState(false);
+  const [online, setOnline]     = useState(false);
 
+  // ── Step 1: On mount, check for token in URL or localStorage ──────────────
   useEffect(() => {
     setMounted(true);
-    setLoggedIn(localStorage.getItem(AUTH_KEY) === "1");
 
-    // Fetch stats com retry
-    const fetchStats = async () => {
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get("token");
+
+    let token: string | null = null;
+
+    if (urlToken) {
+      localStorage.setItem(TOKEN_KEY, urlToken);
+      token = urlToken;
+      // Clean the URL
+      window.history.replaceState({}, "", "/admin");
+    } else {
+      token = localStorage.getItem(TOKEN_KEY);
+    }
+
+    if (token) {
+      // Basic expiry check by decoding JWT payload
       try {
-        const res = await fetch(`${BOT_API}/api/stats`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.botName) {
-            setBotStats(data);
-            setOnline(true);
-          }
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        if (Date.now() / 1000 > payload.exp) {
+          localStorage.removeItem(TOKEN_KEY);
+          return;
         }
-      } catch {
-        setOnline(false);
-      }
-    };
+        setDiscordUser({
+          userId: payload.userId,
+          username: payload.username,
+          avatar: payload.avatar,
+        });
+      } catch { /* invalid token */ }
 
-    fetchStats();
-    const statsInterval = setInterval(fetchStats, 30000); // Retry every 30s
-
-    fetch(`${BOT_API}/api/channels`).then(r => r.json()).then(setChannels).catch(() => {});
-    fetch(`${BOT_API}/api/guilds`).then(r => r.json()).then(setGuilds).catch(() => {});
-    fetch(`${BOT_API}/api/roles`).then(r => r.json()).then(setRoles).catch(() => {});
-    fetch(`${BOT_API}/api/commands`).then(r => r.json()).then(setCommands).catch(() => {});
-
-    return () => clearInterval(statsInterval);
+      _token = token;
+      setAuthToken(token);
+    }
   }, []);
 
-  if (!mounted) return null;
-  if (!loggedIn) return <LoginScreen onLogin={() => setLoggedIn(true)} />;
+  // ── Step 2: When token is set, fetch guilds + bot commands ────────────────
+  useEffect(() => {
+    if (!authToken) return;
+
+    adminFetch(`${BOT_API}/api/my-guilds`)
+      .then(r => {
+        if (!r.ok) throw new Error("unauthorized");
+        return r.json();
+      })
+      .then((data: Guild[]) => setMyGuilds(data))
+      .catch(() => {
+        // Token expired or invalid
+        localStorage.removeItem(TOKEN_KEY);
+        _token = null;
+        setAuthToken(null);
+        setDiscordUser(null);
+      });
+
+    adminFetch(`${BOT_API}/api/commands`)
+      .then(r => r.json())
+      .then(setCommands)
+      .catch(() => {});
+  }, [authToken]);
+
+  // ── Step 3: When a guild is selected, load its channels, roles, and stats ──
+  useEffect(() => {
+    if (!selectedGuild || !authToken) return;
+
+    adminFetch(`${BOT_API}/api/guild/${selectedGuild.id}/channels`)
+      .then(r => r.json()).then(setChannels).catch(() => {});
+
+    adminFetch(`${BOT_API}/api/guild/${selectedGuild.id}/roles`)
+      .then(r => r.json()).then(setRoles).catch(() => {});
+
+    const fetchStats = async () => {
+      try {
+        const res = await adminFetch(`${BOT_API}/api/guild/${selectedGuild.id}/stats`);
+        if (res.ok) {
+          const data = await res.json();
+          setBotStats({ ...data, members: data.memberCount, guilds: myGuilds.length, ping: data.ping });
+          setOnline(true);
+        }
+      } catch { setOnline(false); }
+    };
+    fetchStats();
+    const interval = setInterval(fetchStats, 30000);
+    return () => clearInterval(interval);
+  }, [selectedGuild, authToken, myGuilds.length]);
 
   function handleLogout() {
-    localStorage.removeItem(AUTH_KEY);
-    setLoggedIn(false);
+    localStorage.removeItem(TOKEN_KEY);
+    _token = null;
+    setAuthToken(null);
+    setDiscordUser(null);
+    setSelectedGuild(null);
+    setMyGuilds([]);
   }
+
+  if (!mounted) return null;
+  if (!authToken) return <LoginScreen />;
+  if (!selectedGuild) {
+    return (
+      <GuildPickerScreen
+        guilds={myGuilds}
+        user={discordUser}
+        onSelect={(g) => { setSelectedGuild(g); setTab("overview"); }}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // Pass selected guild as the only guild so tabs auto-select it
+  const guildArr = [selectedGuild];
+  const avatarUrl = discordUser?.avatar
+    ? `https://cdn.discordapp.com/avatars/${discordUser.userId}/${discordUser.avatar}.webp?size=32`
+    : null;
 
   return (
     <div className="min-h-screen bg-[#08080A] text-bone">
@@ -2573,12 +2942,36 @@ export default function AdminPage() {
                 Itadori <span className="text-crimson">Admin</span>
               </span>
             </div>
+            {/* Guild badge + switch button */}
+            <button
+              onClick={() => setSelectedGuild(null)}
+              className="flex items-center gap-2 px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:border-crimson/30 transition-colors"
+              title="Trocar servidor"
+            >
+              {selectedGuild.icon ? (
+                <img src={selectedGuild.icon} alt="" className="w-4 h-4 rounded-full" />
+              ) : (
+                <div className="w-4 h-4 rounded-full bg-crimson/30" />
+              )}
+              <span className="text-xs text-bone/60 max-w-[120px] truncate">{selectedGuild.name}</span>
+              <ChevronDown className="w-3 h-3 text-bone/30" />
+            </button>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <div className={cn("w-2 h-2 rounded-full", online ? "bg-emerald-400" : "bg-red-500")} />
               <span className="text-xs text-bone/40">{online ? "Bot Online" : "Bot Offline"}</span>
             </div>
+            {discordUser && (
+              <div className="flex items-center gap-2">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="" className="w-6 h-6 rounded-full" />
+                ) : (
+                  <UserIcon className="w-4 h-4 text-bone/40" />
+                )}
+                <span className="text-xs text-bone/50 hidden sm:inline">{discordUser.username}</span>
+              </div>
+            )}
             <button
               onClick={handleLogout}
               title="Sair"
@@ -2612,17 +3005,19 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {/* Tab content */}
+        {/* Tab content — todos recebem apenas o servidor selecionado */}
         {tab === "overview"   && <TabOverview stats={botStats} />}
-        {tab === "embed"      && <TabEmbedBuilder channels={channels} guilds={guilds} />}
-        {tab === "eventos"    && <TabEventos channels={channels} guilds={guilds} roles={roles} />}
-        {tab === "noticias"   && <TabNoticias channels={channels} guilds={guilds} roles={roles} />}
-        {tab === "welcome"    && <TabWelcome channels={channels} guilds={guilds} />}
-        {tab === "logs"       && <TabLogs channels={channels} guilds={guilds} />}
-        {tab === "verificar"  && <TabVerificar channels={channels} guilds={guilds} roles={roles} />}
-        {tab === "autoroles"  && <TabAutoRoles guilds={guilds} roles={roles} />}
+        {tab === "embed"      && <TabEmbedBuilder channels={channels} guilds={guildArr} />}
+        {tab === "eventos"    && <TabEventos channels={channels} guilds={guildArr} roles={roles} />}
+        {tab === "noticias"   && <TabNoticias channels={channels} guilds={guildArr} roles={roles} />}
+        {tab === "welcome"    && <TabWelcome channels={channels} guilds={guildArr} />}
+        {tab === "logs"       && <TabLogs channels={channels} guilds={guildArr} />}
+        {tab === "verificar"  && <TabVerificar channels={channels} guilds={guildArr} roles={roles} />}
+        {tab === "autoroles"  && <TabAutoRoles guilds={guildArr} roles={roles} />}
         {tab === "commands"   && <TabCommands commands={commands} />}
-        {tab === "botconfig"  && <TabBotConfig guilds={guilds} channels={channels} />}
+        {tab === "botconfig"  && <TabBotConfig guilds={guildArr} channels={channels} />}
+        {tab === "ia"         && <TabIA guilds={guildArr} />}
+        {tab === "servidores" && <TabServidores />}
       </div>
     </div>
   );

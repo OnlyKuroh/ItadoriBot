@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { AnimatedSection } from "@/components/ui/animated-section";
 import { useBotMembers, type BotMember } from "@/hooks/useBotMembers";
@@ -78,8 +78,6 @@ function MemberCard({ member }: { member: BotMember }) {
 }
 
 export function Members() {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const [paused, setPaused] = useState(false);
   const shouldReduceMotion = useReducedMotion();
   const { members: botMembers } = useBotMembers();
   const { stats } = useBotStats();
@@ -87,12 +85,29 @@ export function Members() {
   // Use real members from bot, fallback to demo if offline
   const displayMembers = botMembers.length > 0 ? botMembers : DEMO_MEMBERS;
 
-  // Infinite loop — enough copies to always fill the screen
-  const copies = Math.max(3, Math.ceil(24 / Math.max(displayMembers.length, 1)) + 1);
-  const tripled = Array.from({ length: copies }, () => displayMembers).flat();
+  // Duplicate the list once — CSS marquee scrolls by 50% (one full set)
+  const doubled = [...displayMembers, ...displayMembers];
+
+  // Speed: ~120px per second feels natural; each card is ~112px wide
+  const totalPx = displayMembers.length * 112;
+  const duration = Math.max(15, totalPx / 80);
 
   return (
     <section id="feiticeiros" className="section-padding relative overflow-hidden">
+      <style>{`
+        @keyframes marquee {
+          from { transform: translateX(0); }
+          to   { transform: translateX(-50%); }
+        }
+        .marquee-track {
+          animation: marquee ${duration}s linear infinite;
+        }
+        .marquee-track.paused,
+        .marquee-wrapper:hover .marquee-track {
+          animation-play-state: paused;
+        }
+      `}</style>
+
       <div className="absolute inset-0 gradient-section pointer-events-none" />
 
       <div className="section-container relative mb-10">
@@ -112,33 +127,17 @@ export function Members() {
       </div>
 
       {/* Carousel strip */}
-      <div
-        className="relative overflow-hidden"
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
-      >
+      <div className="relative overflow-hidden marquee-wrapper">
         {/* Fade edges */}
         <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-[#08080A] to-transparent z-10 pointer-events-none" />
         <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-[#08080A] to-transparent z-10 pointer-events-none" />
 
         <div className="py-4">
-          <motion.div
-            ref={trackRef}
-            className="flex items-end pb-4"
-            animate={shouldReduceMotion || paused ? {} : {
-              x: ["0%", `-${100 / 3}%`],
-            }}
-            transition={{
-              duration: 30,
-              ease: "linear",
-              repeat: Infinity,
-              repeatType: "loop",
-            }}
-          >
-            {tripled.map((member, i) => (
+          <div className={`flex items-end pb-4 ${shouldReduceMotion ? "" : "marquee-track"}`}>
+            {doubled.map((member, i) => (
               <MemberCard key={`${member.id}-${i}`} member={member} />
             ))}
-          </motion.div>
+          </div>
         </div>
       </div>
 
