@@ -12,6 +12,7 @@ export const SITE = {
 
 export const NAV_LINKS = [
   { label: "Início", href: "#inicio" },
+  { label: "Updates", href: "#updates" },
   { label: "Sobre", href: "#sobre" },
   { label: "Poderes", href: "#poderes" },
   { label: "Comandos", href: "#comandos" },
@@ -33,6 +34,7 @@ export const COMMANDS = [
     commands: [
       { name: "setwelcome", description: "Configura a mensagem de boas-vindas com embed personalizado", usage: "/setwelcome #canal" },
       { name: "setlogs", description: "Define o canal de logs para registrar atividades do servidor", usage: "/setlogs #canal" },
+      { name: "setnovidades", description: "Configura o canal das notas automaticas de update", usage: "/setnovidades #canal" },
       { name: "setverificar", description: "Configura o sistema de verificação de membros", usage: "/setverificar #canal" },
       { name: "ban", description: "Bane um usuário permanentemente do servidor", usage: "/ban @user [motivo]" },
       { name: "kick", description: "Expulsa um usuário do servidor", usage: "/kick @user [motivo]" },

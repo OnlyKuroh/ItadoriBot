@@ -3,6 +3,7 @@
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { Hero } from "@/components/sections/hero";
+import { Updates } from "@/components/sections/updates";
 import { Stats } from "@/components/sections/stats";
 import { About } from "@/components/sections/about";
 import { Features } from "@/components/sections/features";
@@ -19,6 +20,7 @@ export default function Home() {
 
       <main className="relative z-[1]">
         <Hero />
+        <Updates />
         <Stats />
         <About />
         <Features />
