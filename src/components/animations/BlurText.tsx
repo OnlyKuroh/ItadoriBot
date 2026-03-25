@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect, useState } from 'react';
-import { motion, useInView } from 'framer-motion';
+import { motion, useInView, type Variants } from 'framer-motion';
 
 interface BlurTextProps {
   text: string;
@@ -18,7 +18,7 @@ export default function BlurText({ text, delay = 0, className = '' }: BlurTextPr
     setElements(text.split(' '));
   }, [text]);
 
-  const container = {
+  const container: Variants = {
     hidden: { opacity: 0 },
     visible: (i = 1) => ({
       opacity: 1,
@@ -26,13 +26,13 @@ export default function BlurText({ text, delay = 0, className = '' }: BlurTextPr
     }),
   };
 
-  const child = {
+  const child: Variants = {
     visible: {
       opacity: 1,
       filter: "blur(0px)",
       y: 0,
       transition: {
-        type: "spring",
+        type: "spring" as const,
         damping: 12,
         stiffness: 100,
       },
@@ -42,7 +42,7 @@ export default function BlurText({ text, delay = 0, className = '' }: BlurTextPr
       filter: "blur(10px)",
       y: 10,
       transition: {
-        type: "spring",
+        type: "spring" as const,
         damping: 12,
         stiffness: 100,
       },

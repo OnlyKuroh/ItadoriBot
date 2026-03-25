@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
@@ -921,7 +921,7 @@ function TabWelcome({ channels, guilds }: { channels: Channel[]; guilds: Guild[]
     fields: [],
   };
 
-  const steps = [
+  const steps: any[] = [
     {
       id: "channel",
       label: "Geral",
@@ -2521,10 +2521,14 @@ function TabServidores() {
 
 // ─── Aba IA ───────────────────────────────────────────────────────────────────
 function TabIA({ guilds }: { guilds: Guild[] }) {
-  const [modEnabled, setModEnabled] = useState(false);
-  const [visionEnabled, setVisionEnabled] = useState(false);
-  const [action, setAction] = useState<"log" | "delete" | "timeout">("log");
-  const [toast, setToast] = useState("");
+  const [guildId, setGuildId] = useState(guilds[0]?.id || "");
+  const [config, setConfig] = useState<any>({ 
+    enabled: true, dmMode: false, maxCallsPerHour: 25, 
+    horaInicio: 0, horaFim: 24, cooldownMinutes: 30 
+  });
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [provider, setProvider] = useState<string>("groq");
 
   useEffect(() => {
@@ -2534,82 +2538,120 @@ function TabIA({ guilds }: { guilds: Guild[] }) {
       .catch(() => {});
   }, []);
 
-  function showToast(msg: string) {
-    setToast(msg);
-    setTimeout(() => setToast(""), 3000);
-  }
+  useEffect(() => {
+    if (!guildId) return;
+    setLoading(true);
+    adminFetch(`${BOT_API}/api/ia-config/${guildId}`)
+      .then(r => r.json())
+      .then(d => setConfig(d))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [guildId]);
+
+  const save = async () => {
+    setSaving(true); setResult(null);
+    try {
+      const r = await adminFetch(`${BOT_API}/api/ia-config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guildId, ...config }),
+      });
+      const d = await r.json();
+      setResult(d.success ? { ok: true, msg: "Configuração salva!" } : { ok: false, msg: d.error || "Erro." });
+    } catch {
+      setResult({ ok: false, msg: "Bot offline." });
+    }
+    setSaving(false);
+    setTimeout(() => setResult(null), 3000);
+  };
 
   return (
-    <div className="space-y-6">
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-purple-700 text-white px-4 py-2 rounded-lg shadow-lg text-sm">
-          {toast}
-        </div>
-      )}
-
-      {/* Card provider */}
-      <div className="rounded-xl border border-purple-800/40 bg-black/30 backdrop-blur p-4 flex items-center gap-3">
-        <Activity className="w-5 h-5 text-purple-400" />
+    <div className="max-w-4xl mx-auto py-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <p className="text-xs text-gray-400 uppercase tracking-wider">Provider de IA</p>
-          <p className="text-sm font-semibold text-white">
-            {provider === "ollama" ? "Ollama (local)" : "Groq API"}
-            <span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-bold ${provider === "ollama" ? "bg-green-700 text-green-100" : "bg-purple-700 text-purple-100"}`}>
-              {provider === "ollama" ? "Local • Ilimitado" : "Cloud • Rate limited"}
-            </span>
-          </p>
+           <h1 className="text-2xl font-bebas tracking-wide mb-1 text-bone">Controle de Energia Amaldiçoada (IA)</h1>
+           <p className="text-bone/50 text-sm">Configure como o Itadori interage e modera seu servidor usando IA.</p>
+        </div>
+        <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
+           <Activity className="w-4 h-4 text-crimson" />
+           <span className="text-xs font-semibold text-bone/70 uppercase">Status: {provider === "ollama" ? "Ollama Local" : "Groq Cloud"}</span>
         </div>
       </div>
 
-      {/* Toggle moderação */}
-      <div className="rounded-xl border border-purple-800/40 bg-black/30 backdrop-blur p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-purple-300 uppercase tracking-wider flex items-center gap-2">
-          <Shield className="w-4 h-4" /> Moderação com IA
-        </h3>
+      <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1 space-y-4">
+          <Field label="Selecionar Servidor">
+            <select value={guildId} onChange={e => setGuildId(e.target.value)} className={inputCls}>
+              {guilds.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+          </Field>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-white font-medium">Ativar Moderação com IA</p>
-            <p className="text-xs text-gray-400 mt-0.5">Analisa mensagens em tempo real usando {provider === "ollama" ? "Ollama local" : "Groq"}</p>
+          <div className="bg-crimson/5 border border-crimson/20 rounded-xl p-4 space-y-4">
+             <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-bone">IA Habilitada</span>
+                <button onClick={() => setConfig({...config, enabled: !config.enabled})} className="focus:outline-none">
+                  {config.enabled ? <ToggleRight className="w-8 h-8 text-crimson" /> : <ToggleLeft className="w-8 h-8 text-white/20" />}
+                </button>
+             </div>
+             <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-medium text-bone">Modo Privado (DM)</span>
+                  <p className="text-[10px] text-bone/40">Responde no DM do usuário para evitar flood.</p>
+                </div>
+                <button onClick={() => setConfig({...config, dmMode: !config.dmMode})} className="focus:outline-none">
+                  {config.dmMode ? <ToggleRight className="w-8 h-8 text-crimson" /> : <ToggleLeft className="w-8 h-8 text-white/20" />}
+                </button>
+             </div>
           </div>
-          <button onClick={() => setModEnabled(v => !v)} className="focus:outline-none">
-            {modEnabled
-              ? <ToggleRight className="w-8 h-8 text-purple-400" />
-              : <ToggleLeft className="w-8 h-8 text-gray-500" />}
-          </button>
         </div>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-white font-medium">Analisar imagens</p>
-            <p className="text-xs text-gray-400 mt-0.5">Usa visão computacional ({provider === "ollama" ? "LLaVA local" : "Groq LLaVA"})</p>
-          </div>
-          <button onClick={() => setVisionEnabled(v => !v)} className="focus:outline-none">
-            {visionEnabled
-              ? <ToggleRight className="w-8 h-8 text-purple-400" />
-              : <ToggleLeft className="w-8 h-8 text-gray-500" />}
-          </button>
-        </div>
+        <div className="lg:col-span-2 space-y-6">
+           <div className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Limite por Hora" tip="Máximo de interações por servidor a cada hora.">
+                  <input type="number" value={config.maxCallsPerHour} onChange={e => setConfig({...config, maxCallsPerHour: e.target.value})} className={inputCls} />
+                </Field>
+                <Field label="Cooldown (Minutos)" tip="Tempo de espera sugerido após resolver uma dúvida.">
+                  <input type="number" value={config.cooldownMinutes} onChange={e => setConfig({...config, cooldownMinutes: e.target.value})} className={inputCls} />
+                </Field>
+              </div>
 
-        <div>
-          <label className="text-xs text-gray-400 uppercase tracking-wider block mb-1">Ação ao detectar conteúdo impróprio</label>
-          <select
-            value={action}
-            onChange={e => setAction(e.target.value as typeof action)}
-            className="w-full bg-black/50 border border-purple-800/40 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500"
-          >
-            <option value="log">Apenas registrar no log</option>
-            <option value="delete">Deletar mensagem</option>
-            <option value="timeout">Timeout 5 minutos</option>
-          </select>
-        </div>
+              <div className="space-y-3">
+                 <label className="text-xs font-semibold text-bone/40 uppercase tracking-widest flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-crimson" /> Janela de Funcionamento (Brasília)
+                 </label>
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                       <span className="text-[10px] text-bone/30 uppercase">Início (0-23h)</span>
+                       <input type="number" min="0" max="23" value={config.horaInicio} onChange={e => setConfig({...config, horaInicio: e.target.value})} className={inputCls} />
+                    </div>
+                    <div className="space-y-1">
+                       <span className="text-[10px] text-bone/30 uppercase">Fim (0-23h)</span>
+                       <input type="number" min="0" max="23" value={config.horaFim} onChange={e => setConfig({...config, horaFim: e.target.value})} className={inputCls} />
+                    </div>
+                 </div>
+                 <p className="text-[10px] text-crimson/60 italic">* Use 0 e 24 para funcionamento 24h.</p>
+              </div>
 
-        <button
-          onClick={() => showToast("⚙️ Configuração de IA em breve!")}
-          className="w-full py-2 rounded-lg bg-purple-700 hover:bg-purple-600 text-white text-sm font-semibold transition-colors"
-        >
-          Salvar configurações
-        </button>
+              {result && (
+                <p className={cn("text-sm px-4 py-2 rounded-lg mt-4", result.ok
+                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                  : "bg-red-500/10 text-red-400 border border-red-500/20")}>
+                  {result.msg}
+                </p>
+              )}
+
+              <button onClick={save} disabled={saving || loading}
+                className="w-full py-3 bg-crimson rounded-xl text-white font-bold hover:bg-crimson-light transition-all shadow-lg shadow-crimson/10 disabled:opacity-50">
+                {saving ? "Canalizando..." : "Vincular Configurações"}
+              </button>
+           </div>
+           
+           <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 flex gap-4 items-start text-amber-200/80 text-xs shadow-inner">
+              <Shield className="w-5 h-5 flex-shrink-0 text-amber-500" />
+              <p>O Itadori utiliza filtros avançados de linguagem para evitar abusos. Se detectar ofensas repetidas, o usuário entrará em cooldown automático.</p>
+           </div>
+        </div>
       </div>
     </div>
   );

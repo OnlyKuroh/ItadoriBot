@@ -23,12 +23,15 @@
 # misc
 .DS_Store
 *.pem
+/.local-tools/
 
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+build_output.txt
+errors.txt
 
 # env files (can opt-in for committing if needed)
 .env*

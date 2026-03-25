@@ -10,13 +10,18 @@ import {
   useVelocity,
   useAnimationFrame
 } from "framer-motion";
-import { wrap } from "@motionone/utils";
 
 interface ScrollVelocityProps {
   text: string;
   velocity?: number;
   className?: string;
   parallaxOffset?: number;
+}
+
+function wrap(min: number, max: number, value: number) {
+  const range = max - min;
+  if (range === 0) return min;
+  return ((((value - min) % range) + range) % range) + min;
 }
 
 export default function ScrollVelocity({
