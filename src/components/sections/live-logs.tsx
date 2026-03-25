@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, useReducedMotion, AnimatePresence } from "framer-motion";
 import { io, Socket } from "socket.io-client";
-import { Activity, User, MessageSquare, Shield, Bell, Zap, Clock, Hash } from "lucide-react";
+import { Activity, User, MessageSquare, Shield, Bell, Zap, Clock, Hash, Globe } from "lucide-react";
 import { AnimatedSection } from "@/components/ui/animated-section";
 
 interface LogEntry {
@@ -25,6 +25,12 @@ const LOG_ICONS: Record<string, React.ReactNode> = {
   KICK: <Shield className="w-4 h-4" />,
   MESSAGE_DELETE: <MessageSquare className="w-4 h-4" />,
   MESSAGE_EDIT: <MessageSquare className="w-4 h-4" />,
+  VOICE_JOIN:   <Hash className="w-4 h-4" />,
+  VOICE_LEAVE:  <Hash className="w-4 h-4" />,
+  VOICE_MOVE:   <Hash className="w-4 h-4" />,
+  GUILD_JOIN:   <Globe className="w-4 h-4" />,
+  VERIFY_SETUP: <Shield className="w-4 h-4" />,
+  ROLE_CREATE:  <User className="w-4 h-4" />,
   DEFAULT: <Activity className="w-4 h-4" />,
 };
 
@@ -37,6 +43,12 @@ const LOG_COLORS: Record<string, string> = {
   KICK: "text-orange-400 bg-orange-500/10 border-orange-500/20",
   MESSAGE_DELETE: "text-rose-400 bg-rose-500/10 border-rose-500/20",
   MESSAGE_EDIT: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
+  VOICE_JOIN:   "text-teal-400 bg-teal-500/10 border-teal-500/20",
+  VOICE_LEAVE:  "text-slate-400 bg-slate-500/10 border-slate-500/20",
+  VOICE_MOVE:   "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
+  GUILD_JOIN:   "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
+  VERIFY_SETUP: "text-violet-400 bg-violet-500/10 border-violet-500/20",
+  ROLE_CREATE:  "text-pink-400 bg-pink-500/10 border-pink-500/20",
   DEFAULT: "text-bone/60 bg-white/5 border-white/10",
 };
 
@@ -62,6 +74,8 @@ export function LiveLogs() {
   const [loading, setLoading] = useState(true);
   const socketRef = useRef<Socket | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const popupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [guildPopup, setGuildPopup] = useState<{ name: string; icon: string | null; memberCount: number } | null>(null);
 
   useEffect(() => {
     // Fetch initial logs
@@ -90,14 +104,41 @@ export function LiveLogs() {
       setLogs((prev) => [log, ...prev].slice(0, 15));
     });
 
+    socket.on("guildJoin", (data) => {
+      setGuildPopup(data);
+      if (popupTimerRef.current) clearTimeout(popupTimerRef.current);
+      popupTimerRef.current = setTimeout(() => setGuildPopup(null), 8000);
+    });
+
     socketRef.current = socket;
 
     return () => {
       socket.disconnect();
+      if (popupTimerRef.current) clearTimeout(popupTimerRef.current);
     };
   }, []);
 
   return (
+    <>
+      {guildPopup && (
+        <div className="fixed bottom-6 right-6 z-[9999] animate-in slide-in-from-bottom-4 duration-500">
+          <div className="flex items-center gap-3 bg-[#0D0D10] border border-yellow-500/30 rounded-2xl p-4 shadow-2xl shadow-yellow-500/10 max-w-sm">
+            {guildPopup.icon ? (
+              <img src={guildPopup.icon} alt={guildPopup.name} className="w-12 h-12 rounded-full flex-shrink-0" />
+            ) : (
+              <div className="w-12 h-12 rounded-full bg-yellow-500/20 flex items-center justify-center flex-shrink-0">
+                <span className="text-yellow-400 font-bebas text-lg">{guildPopup.name.charAt(0)}</span>
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-yellow-400 font-medium uppercase tracking-wider mb-0.5">⚡ Novo Servidor!</p>
+              <p className="text-sm font-semibold text-white truncate">{guildPopup.name}</p>
+              <p className="text-xs text-gray-400">👥 {guildPopup.memberCount.toLocaleString('pt-BR')} membros</p>
+            </div>
+            <button onClick={() => setGuildPopup(null)} className="text-gray-500 hover:text-white flex-shrink-0 ml-1">✕</button>
+          </div>
+        </div>
+      )}
     <section id="logs" className="section-padding relative overflow-hidden">
       {/* Background */}
       <div className="absolute inset-0 bg-[#08080A]" />
@@ -225,5 +266,6 @@ export function LiveLogs() {
         </div>
       </div>
     </section>
+    </>
   );
 }

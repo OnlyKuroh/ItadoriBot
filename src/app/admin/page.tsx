@@ -11,6 +11,7 @@ import {
   LogOut, Lock, User as UserIcon,
 } from "lucide-react";
 import { io, Socket } from "socket.io-client";
+import InteractiveGrid from "@/components/InteractiveGrid";
 
 const BOT_API = process.env.NEXT_PUBLIC_BOT_API || "http://localhost:3001";
 
@@ -2550,20 +2551,508 @@ function TabIA({ guilds }: { guilds: Guild[] }) {
   );
 }
 
-const TABS = [
-  { id: "overview",   label: "Visão Geral",   icon: <Zap className="w-4 h-4" /> },
-  { id: "embed",      label: "Embed Builder", icon: <Send className="w-4 h-4" /> },
-  { id: "eventos",    label: "Eventos",       icon: <Radio className="w-4 h-4" /> },
-  { id: "noticias",   label: "Notícias",      icon: <Newspaper className="w-4 h-4" /> },
-  { id: "welcome",    label: "Boas-Vindas",   icon: <Users className="w-4 h-4" /> },
-  { id: "logs",       label: "Set Logs",      icon: <Bell className="w-4 h-4" /> },
-  { id: "verificar",  label: "Verificação",   icon: <Shield className="w-4 h-4" /> },
-  { id: "autoroles",  label: "Auto-Roles",    icon: <UserPlus className="w-4 h-4" /> },
-  { id: "commands",   label: "Comandos",      icon: <Hash className="w-4 h-4" /> },
-  { id: "botconfig",  label: "Bot",           icon: <Bot className="w-4 h-4" /> },
-  { id: "ia",         label: "IA",            icon: <Activity className="w-4 h-4" /> },
-  { id: "servidores", label: "Servidores",    icon: <Globe className="w-4 h-4" /> },
+// ─── Custom Commands Tab ──────────────────────────────────────────────────────
+interface CustomCmd {
+  id: number; guild_id: string; trigger: string; trigger_type: string;
+  response: string; required_role_id: string | null; cooldown_seconds: number; enabled: number;
+}
+
+const TRIGGER_TYPE_LABELS: Record<string, string> = {
+  prefix: "Prefixo",
+  contains: "Contém",
+  exact: "Exato",
+};
+
+function TabCustomCmds({ guilds, roles }: { guilds: Guild[]; roles: Role[] }) {
+  const [guildId, setGuildId] = useState(guilds[0]?.id || "");
+  const [cmds, setCmds] = useState<CustomCmd[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const [trigger, setTrigger] = useState("");
+  const [triggerType, setTriggerType] = useState("prefix");
+  const [response, setResponse] = useState("");
+  const [roleId, setRoleId] = useState("");
+  const [cooldown, setCooldown] = useState(0);
+
+  const guildRoles = roles;
+
+  useEffect(() => {
+    if (!guildId) return;
+    setLoading(true);
+    adminFetch(`${BOT_API}/api/custom-commands/${guildId}`)
+      .then(r => r.json())
+      .then((data: CustomCmd[]) => { setCmds(Array.isArray(data) ? data : []); })
+      .catch(() => setCmds([]))
+      .finally(() => setLoading(false));
+  }, [guildId]);
+
+  const showResult = (ok: boolean, msg: string) => {
+    setResult({ ok, msg });
+    setTimeout(() => setResult(null), 3500);
+  };
+
+  const handleCreate = async () => {
+    if (!guildId || !trigger.trim() || !response.trim()) {
+      return showResult(false, "Preencha o gatilho e a resposta.");
+    }
+    setSaving(true);
+    try {
+      const r = await adminFetch(`${BOT_API}/api/custom-commands`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guildId, trigger: trigger.trim(), triggerType, response, requiredRoleId: roleId || null, cooldownSeconds: cooldown }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        showResult(true, "Comando criado!");
+        setTrigger(""); setResponse(""); setRoleId(""); setCooldown(0);
+        // reload
+        const fresh = await adminFetch(`${BOT_API}/api/custom-commands/${guildId}`).then(r2 => r2.json());
+        setCmds(Array.isArray(fresh) ? fresh : []);
+      } else {
+        showResult(false, d.error || "Erro ao criar.");
+      }
+    } catch { showResult(false, "Bot offline."); }
+    setSaving(false);
+  };
+
+  const handleDelete = async (cmd: CustomCmd) => {
+    try {
+      await adminFetch(`${BOT_API}/api/custom-commands/${guildId}/${encodeURIComponent(cmd.trigger)}/${encodeURIComponent(cmd.trigger_type)}`, { method: "DELETE" });
+      setCmds(prev => prev.filter(c => c.id !== cmd.id));
+    } catch { showResult(false, "Erro ao deletar."); }
+  };
+
+  const handleToggle = async (cmd: CustomCmd) => {
+    try {
+      await adminFetch(`${BOT_API}/api/custom-commands/${guildId}/${encodeURIComponent(cmd.trigger)}/${encodeURIComponent(cmd.trigger_type)}/toggle`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !cmd.enabled }),
+      });
+      setCmds(prev => prev.map(c => c.id === cmd.id ? { ...c, enabled: c.enabled ? 0 : 1 } : c));
+    } catch { showResult(false, "Erro ao alternar."); }
+  };
+
+  return (
+    <div className="space-y-6">
+      {result && (
+        <div className={`flex items-center gap-2 p-3 rounded-xl text-sm border ${result.ok ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-red-500/10 border-red-500/20 text-red-400"}`}>
+          {result.ok ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          {result.msg}
+        </div>
+      )}
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Form criar */}
+        <div className="space-y-5">
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 text-sm text-blue-300 space-y-1">
+            <p className="font-semibold">Como funciona</p>
+            <p className="text-xs text-blue-300/70">
+              <strong>Prefixo</strong> — ativa se a mensagem <em>começa com</em> o gatilho.<br />
+              <strong>Contém</strong> — ativa se a mensagem <em>contém</em> o gatilho em qualquer parte.<br />
+              <strong>Exato</strong> — ativa somente se a mensagem <em>for exatamente</em> o gatilho.
+            </p>
+          </div>
+
+          {guilds.length > 0 && (
+            <Field label="Servidor">
+              <select value={guildId} onChange={e => setGuildId(e.target.value)} className={inputCls}>
+                {guilds.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </Field>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Gatilho">
+              <input value={trigger} onChange={e => setTrigger(e.target.value)}
+                placeholder="!regras ou olá" className={inputCls} maxLength={64} />
+            </Field>
+            <Field label="Tipo de detecção">
+              <select value={triggerType} onChange={e => setTriggerType(e.target.value)} className={inputCls}>
+                <option value="prefix">Prefixo</option>
+                <option value="contains">Contém</option>
+                <option value="exact">Exato</option>
+              </select>
+            </Field>
+          </div>
+
+          <Field label="Resposta" tip="Texto que o bot vai enviar. Suporta markdown do Discord.">
+            <textarea value={response} onChange={e => setResponse(e.target.value)}
+              placeholder="Leia as regras em #regras! **Bom jogo!**"
+              className={textareaCls} rows={4} maxLength={1800} />
+            <p className="text-xs text-bone/30 text-right">{response.length}/1800</p>
+          </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Cargo necessário (opcional)">
+              <select value={roleId} onChange={e => setRoleId(e.target.value)} className={inputCls}>
+                <option value="">— Qualquer membro —</option>
+                {guildRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Cooldown por usuário (seg)">
+              <input type="number" min={0} max={3600} value={cooldown}
+                onChange={e => setCooldown(Number(e.target.value))} className={inputCls} />
+            </Field>
+          </div>
+
+          <button onClick={handleCreate} disabled={saving}
+            className="w-full py-2.5 rounded-xl bg-crimson hover:bg-crimson/80 text-white font-semibold text-sm transition-colors disabled:opacity-50">
+            {saving ? "Salvando..." : "Criar Comando"}
+          </button>
+        </div>
+
+        {/* Lista existente */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-bone/70">
+              Comandos ativos ({cmds.length}/50)
+            </p>
+            {loading && <span className="text-xs text-bone/30">Carregando...</span>}
+          </div>
+
+          {cmds.length === 0 && !loading && (
+            <div className="text-center py-10 text-bone/30 text-sm bg-white/3 border border-white/8 rounded-xl">
+              Nenhum comando personalizado criado ainda.
+            </div>
+          )}
+
+          <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+            {cmds.map(cmd => (
+              <div key={cmd.id}
+                className={`bg-white/3 border rounded-xl p-3 space-y-1.5 transition-opacity ${cmd.enabled ? "border-white/10" : "border-white/5 opacity-50"}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <code className="text-crimson text-sm font-mono bg-crimson/10 px-1.5 py-0.5 rounded">
+                        {cmd.trigger}
+                      </code>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-bone/50">
+                        {TRIGGER_TYPE_LABELS[cmd.trigger_type] || cmd.trigger_type}
+                      </span>
+                      {cmd.cooldown_seconds > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400">
+                          ⏱ {cmd.cooldown_seconds}s
+                        </span>
+                      )}
+                      {cmd.required_role_id && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">
+                          🎭 cargo
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-bone/50 text-xs mt-1 truncate">{cmd.response}</p>
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => handleToggle(cmd)} title={cmd.enabled ? "Desativar" : "Ativar"}
+                      className="p-1.5 rounded-lg hover:bg-white/10 transition-colors text-bone/50 hover:text-bone">
+                      {cmd.enabled ? <ToggleRight className="w-4 h-4 text-emerald-400" /> : <ToggleLeft className="w-4 h-4" />}
+                    </button>
+                    <button onClick={() => handleDelete(cmd)} title="Deletar"
+                      className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors text-bone/30 hover:text-red-400">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Sidebar Groups ────────────────────────────────────────────────────────
+interface SidebarItem { id: string; label: string; icon: React.ReactNode; }
+interface SidebarGroup { label: string; items: SidebarItem[]; }
+
+const SIDEBAR_GROUPS: SidebarGroup[] = [
+  {
+    label: "Geral",
+    items: [
+      { id: "overview",   label: "Visão Geral",   icon: <Zap className="w-4 h-4" /> },
+      { id: "servidores", label: "Servidores",     icon: <Globe className="w-4 h-4" /> },
+    ],
+  },
+  {
+    label: "Configuração",
+    items: [
+      { id: "botconfig",  label: "Bot Config",     icon: <Bot className="w-4 h-4" /> },
+      { id: "welcome",    label: "Boas-Vindas",    icon: <Users className="w-4 h-4" /> },
+      { id: "logs",       label: "Set Logs",        icon: <Bell className="w-4 h-4" /> },
+      { id: "verificar",  label: "Verificação",     icon: <Shield className="w-4 h-4" /> },
+      { id: "autoroles",  label: "Auto-Roles",      icon: <UserPlus className="w-4 h-4" /> },
+    ],
+  },
+  {
+    label: "Ferramentas",
+    items: [
+      { id: "embed",      label: "Embed Builder",   icon: <Send className="w-4 h-4" /> },
+      { id: "customcmds", label: "Cmds Custom",     icon: <Terminal className="w-4 h-4" /> },
+      { id: "commands",   label: "Comandos",         icon: <Hash className="w-4 h-4" /> },
+    ],
+  },
+  {
+    label: "Automação",
+    items: [
+      { id: "eventos",    label: "Eventos",          icon: <Radio className="w-4 h-4" /> },
+      { id: "noticias",   label: "Notícias",         icon: <Newspaper className="w-4 h-4" /> },
+      { id: "ia",         label: "IA Config",         icon: <Activity className="w-4 h-4" /> },
+    ],
+  },
 ];
+
+// Flat list for compatibility
+const TABS = SIDEBAR_GROUPS.flatMap(g => g.items);
+
+// ─── Sidebar Component ──────────────────────────────────────────────────────
+function Sidebar({
+  tab, setTab, guild, online, user, onLogout, onSwitchGuild, collapsed, onToggle,
+}: {
+  tab: string; setTab: (t: string) => void; guild: Guild;
+  online: boolean; user: DiscordUser | null;
+  onLogout: () => void; onSwitchGuild: () => void;
+  collapsed: boolean; onToggle: () => void;
+}) {
+  const avatarUrl = user?.avatar
+    ? `https://cdn.discordapp.com/avatars/${user.userId}/${user.avatar}.webp?size=32`
+    : null;
+
+  return (
+    <aside className={cn(
+      "fixed left-0 top-0 h-full z-50 flex flex-col bg-[#0C0C0E] border-r border-white/5 transition-all duration-300",
+      collapsed ? "w-[64px]" : "w-[240px]",
+      "lg:relative lg:flex",
+    )}>
+      {/* Logo */}
+      <div className="h-14 flex items-center gap-2 px-4 border-b border-white/5 flex-shrink-0">
+        <div className="w-8 h-8 rounded-xl bg-crimson flex items-center justify-center flex-shrink-0 shadow-lg shadow-crimson/20">
+          <span className="font-bebas text-white text-sm">I</span>
+        </div>
+        {!collapsed && (
+          <span className="font-bebas text-lg tracking-wider text-bone whitespace-nowrap">
+            Itadori <span className="text-crimson">Admin</span>
+          </span>
+        )}
+      </div>
+
+      {/* Guild Badge */}
+      <button
+        onClick={onSwitchGuild}
+        className={cn(
+          "mx-3 mt-3 flex items-center gap-2 rounded-lg bg-white/3 border border-white/8 hover:border-crimson/30 transition-colors",
+          collapsed ? "p-2 justify-center" : "p-2.5",
+        )}
+        title={collapsed ? guild.name : "Trocar servidor"}
+      >
+        {guild.icon ? (
+          <img src={guild.icon} alt="" className="w-6 h-6 rounded-full flex-shrink-0" />
+        ) : (
+          <div className="w-6 h-6 rounded-full bg-crimson/20 flex items-center justify-center flex-shrink-0">
+            <span className="font-bebas text-crimson text-xs">{guild.name[0]}</span>
+          </div>
+        )}
+        {!collapsed && (
+          <>
+            <span className="text-xs text-bone/60 truncate flex-1 text-left">{guild.name}</span>
+            <ChevronDown className="w-3 h-3 text-bone/30 flex-shrink-0" />
+          </>
+        )}
+      </button>
+
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4 custom-scrollbar">
+        {SIDEBAR_GROUPS.map(group => (
+          <div key={group.label}>
+            {!collapsed && (
+              <p className="text-[10px] font-semibold text-bone/30 uppercase tracking-widest px-2 mb-1.5">
+                {group.label}
+              </p>
+            )}
+            <div className="space-y-0.5">
+              {group.items.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => setTab(item.id)}
+                  title={collapsed ? item.label : undefined}
+                  className={cn(
+                    "w-full flex items-center gap-2.5 rounded-lg transition-all",
+                    collapsed ? "p-2.5 justify-center" : "px-3 py-2",
+                    tab === item.id
+                      ? "bg-crimson/15 text-crimson border border-crimson/20 shadow-sm shadow-crimson/5"
+                      : "text-bone/50 hover:text-bone hover:bg-white/5 border border-transparent",
+                  )}
+                >
+                  <span className="flex-shrink-0">{item.icon}</span>
+                  {!collapsed && (
+                    <span className="text-sm font-medium truncate">{item.label}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </nav>
+
+      {/* Bottom section */}
+      <div className="border-t border-white/5 p-3 space-y-2 flex-shrink-0">
+        {/* Status */}
+        <div className={cn("flex items-center gap-2", collapsed && "justify-center")}>
+          <div className={cn("w-2 h-2 rounded-full flex-shrink-0", online ? "bg-emerald-400 animate-pulse" : "bg-red-500")} />
+          {!collapsed && <span className="text-xs text-bone/40">{online ? "Bot Online" : "Offline"}</span>}
+        </div>
+
+        {/* User */}
+        {user && (
+          <div className={cn("flex items-center gap-2", collapsed && "justify-center")}>
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" className="w-6 h-6 rounded-full flex-shrink-0" />
+            ) : (
+              <UserIcon className="w-4 h-4 text-bone/40 flex-shrink-0" />
+            )}
+            {!collapsed && (
+              <span className="text-xs text-bone/50 truncate flex-1">{user.username}</span>
+            )}
+            <button onClick={onLogout} title="Sair"
+              className="text-bone/30 hover:text-bone transition-colors flex-shrink-0">
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Collapse toggle */}
+        <button onClick={onToggle} className="w-full flex items-center justify-center gap-2 py-1.5 rounded-lg hover:bg-white/5 text-bone/30 hover:text-bone transition-colors">
+          <ChevronDown className={cn("w-3.5 h-3.5 transition-transform", collapsed ? "-rotate-90" : "rotate-90")} />
+          {!collapsed && <span className="text-xs">Recolher</span>}
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+// ─── ChatBot Widget ─────────────────────────────────────────────────────────
+function ChatBotWidget() {
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const send = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
+    setInput("");
+    setMessages(prev => [...prev, { role: "user", content: userMsg }]);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`${BOT_API}/api/dashboard-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMsg, history: messages.slice(-6) }),
+      });
+      const data = await res.json();
+      if (data.reply) {
+        setMessages(prev => [...prev, { role: "assistant", content: data.reply }]);
+      } else if (data.error) {
+        setMessages(prev => [...prev, { role: "assistant", content: `⚠️ ${data.error}` }]);
+      }
+    } catch {
+      setMessages(prev => [...prev, { role: "assistant", content: "❌ Erro de conexão." }]);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <>
+      {/* FAB Button */}
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "fixed bottom-6 right-6 z-50 w-14 h-14 rounded-2xl flex items-center justify-center shadow-2xl transition-all duration-300",
+          open ? "bg-[#1a1a1e] border border-white/10 rotate-0" : "bg-crimson hover:scale-110 shadow-crimson/30",
+        )}
+      >
+        {open ? <X className="w-5 h-5 text-bone" /> : <Bot className="w-6 h-6 text-white" />}
+      </button>
+
+      {/* Chat Window */}
+      {open && (
+        <div className="fixed bottom-24 right-6 z-50 w-[360px] h-[480px] bg-[#111113] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5 bg-[#0c0c0e]">
+            <div className="w-8 h-8 rounded-xl bg-crimson/20 flex items-center justify-center">
+              <Bot className="w-4 h-4 text-crimson" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-bone">Assistente Itadori</p>
+              <p className="text-[10px] text-bone/40">Ajuda com configuração do bot</p>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+            {messages.length === 0 && (
+              <div className="text-center py-8 text-bone/30 text-sm">
+                <Bot className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p>Olá! Como posso ajudar?</p>
+                <p className="text-xs mt-1 opacity-50">Pergunte sobre configurações do bot</p>
+              </div>
+            )}
+            {messages.map((msg, i) => (
+              <div key={i} className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
+                <div className={cn(
+                  "max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed",
+                  msg.role === "user"
+                    ? "bg-crimson text-white rounded-br-sm"
+                    : "bg-white/5 text-bone/80 border border-white/5 rounded-bl-sm",
+                )}>
+                  {msg.content}
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div className="flex justify-start">
+                <div className="bg-white/5 border border-white/5 rounded-2xl rounded-bl-sm px-4 py-3">
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 bg-bone/30 rounded-full animate-bounce [animation-delay:0ms]" />
+                    <div className="w-2 h-2 bg-bone/30 rounded-full animate-bounce [animation-delay:150ms]" />
+                    <div className="w-2 h-2 bg-bone/30 rounded-full animate-bounce [animation-delay:300ms]" />
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input */}
+          <div className="flex items-center gap-2 p-3 border-t border-white/5 bg-[#0a0a0c]">
+            <input
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") send(); }}
+              placeholder="Digite sua dúvida..."
+              className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-bone placeholder-bone/30 focus:outline-none focus:border-crimson/40"
+              maxLength={500}
+            />
+            <button onClick={send} disabled={loading || !input.trim()}
+              className="w-10 h-10 rounded-xl bg-crimson/10 border border-crimson/20 text-crimson hover:bg-crimson/20 transition-colors flex items-center justify-center disabled:opacity-30">
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 // ─── Tela de Login com Discord ────────────────────────────────────────────────
 function LoginScreen() {
@@ -2583,8 +3072,8 @@ function LoginScreen() {
 
   return (
     <div className="min-h-screen bg-[#08080A] flex items-center justify-center px-4">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-crimson/5 blur-[120px]" />
+      <div className="absolute inset-0 overflow-hidden">
+        <InteractiveGrid />
       </div>
 
       <div className="relative w-full max-w-sm bg-[#111113] border border-white/8 rounded-2xl p-8 shadow-2xl">
@@ -2645,8 +3134,8 @@ function GuildPickerScreen({
 
   return (
     <div className="min-h-screen bg-[#08080A] flex flex-col items-center justify-center px-4 py-12">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-crimson/4 blur-[120px]" />
+      <div className="absolute inset-0 overflow-hidden">
+        <InteractiveGrid />
       </div>
 
       <div className="relative w-full max-w-lg">
@@ -2808,6 +3297,8 @@ export default function AdminPage() {
   const [commands, setCommands] = useState<Command[]>([]);
   const [botStats, setBotStats] = useState<Record<string, unknown> | null>(null);
   const [online, setOnline]     = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebar, setMobileSidebar]       = useState(false);
 
   // ── Step 1: On mount, check for token in URL or localStorage ──────────────
   useEffect(() => {
@@ -2920,105 +3411,92 @@ export default function AdminPage() {
 
   // Pass selected guild as the only guild so tabs auto-select it
   const guildArr = [selectedGuild];
-  const avatarUrl = discordUser?.avatar
-    ? `https://cdn.discordapp.com/avatars/${discordUser.userId}/${discordUser.avatar}.webp?size=32`
-    : null;
+
+  // Find current tab label
+  const currentTab = TABS.find(t => t.id === tab);
 
   return (
-    <div className="min-h-screen bg-[#08080A] text-bone">
-      {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-white/5 bg-[#08080A]/95 backdrop-blur">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+    <div className="min-h-screen bg-[#08080A] text-bone flex">
+      {/* Mobile sidebar overlay */}
+      {mobileSidebar && (
+        <div className="fixed inset-0 z-40 bg-black/60 lg:hidden" onClick={() => setMobileSidebar(false)} />
+      )}
+
+      {/* Sidebar — always visible on lg, toggled on mobile */}
+      <div className={cn("lg:block", mobileSidebar ? "block" : "hidden")}>
+        <Sidebar
+          tab={tab}
+          setTab={(t) => { setTab(t); setMobileSidebar(false); }}
+          guild={selectedGuild}
+          online={online}
+          user={discordUser}
+          onLogout={handleLogout}
+          onSwitchGuild={() => setSelectedGuild(null)}
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
+      </div>
+
+      {/* Main content */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* Mobile top bar */}
+        <header className="lg:hidden sticky top-0 z-30 h-14 flex items-center justify-between px-4 border-b border-white/5 bg-[#08080A]/95 backdrop-blur">
           <div className="flex items-center gap-3">
-            <a href="/" className="flex items-center gap-1.5 text-bone/50 hover:text-bone transition-colors text-sm">
-              <ArrowLeft className="w-4 h-4" /> Voltar
-            </a>
-            <span className="text-bone/20">/</span>
+            <button onClick={() => setMobileSidebar(true)} className="text-bone/50 hover:text-bone">
+              <Settings className="w-5 h-5" />
+            </button>
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-full bg-crimson flex items-center justify-center">
+              <div className="w-6 h-6 rounded-lg bg-crimson flex items-center justify-center">
                 <span className="font-bebas text-white text-xs">I</span>
               </div>
-              <span className="font-bebas text-lg tracking-wider">
+              <span className="font-bebas text-base tracking-wider">
                 Itadori <span className="text-crimson">Admin</span>
               </span>
             </div>
-            {/* Guild badge + switch button */}
-            <button
-              onClick={() => setSelectedGuild(null)}
-              className="flex items-center gap-2 px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:border-crimson/30 transition-colors"
-              title="Trocar servidor"
-            >
-              {selectedGuild.icon ? (
-                <img src={selectedGuild.icon} alt="" className="w-4 h-4 rounded-full" />
-              ) : (
-                <div className="w-4 h-4 rounded-full bg-crimson/30" />
-              )}
-              <span className="text-xs text-bone/60 max-w-[120px] truncate">{selectedGuild.name}</span>
-              <ChevronDown className="w-3 h-3 text-bone/30" />
-            </button>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className={cn("w-2 h-2 rounded-full", online ? "bg-emerald-400" : "bg-red-500")} />
+            <a href="/" className="text-bone/40 hover:text-bone text-xs">
+              <ArrowLeft className="w-4 h-4" />
+            </a>
+          </div>
+        </header>
+
+        {/* Content header */}
+        <div className="hidden lg:flex items-center justify-between px-8 py-4 border-b border-white/5">
+          <div className="flex items-center gap-4">
+            <a href="/" className="flex items-center gap-1.5 text-bone/40 hover:text-bone transition-colors text-sm">
+              <ArrowLeft className="w-4 h-4" /> Voltar
+            </a>
+            <span className="text-bone/15">|</span>
             <div className="flex items-center gap-2">
-              <div className={cn("w-2 h-2 rounded-full", online ? "bg-emerald-400" : "bg-red-500")} />
-              <span className="text-xs text-bone/40">{online ? "Bot Online" : "Bot Offline"}</span>
+              {currentTab?.icon}
+              <h1 className="text-lg font-semibold text-bone">{currentTab?.label || "Admin"}</h1>
             </div>
-            {discordUser && (
-              <div className="flex items-center gap-2">
-                {avatarUrl ? (
-                  <img src={avatarUrl} alt="" className="w-6 h-6 rounded-full" />
-                ) : (
-                  <UserIcon className="w-4 h-4 text-bone/40" />
-                )}
-                <span className="text-xs text-bone/50 hidden sm:inline">{discordUser.username}</span>
-              </div>
-            )}
-            <button
-              onClick={handleLogout}
-              title="Sair"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-bone/50 hover:text-bone hover:bg-white/10 transition-colors text-xs"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Sair</span>
-            </button>
           </div>
         </div>
-      </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Tab bar */}
-        <div className="flex flex-wrap gap-1 mb-6 bg-white/3 border border-white/8 rounded-xl p-1 w-fit max-w-full">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
-                tab === t.id
-                  ? "bg-crimson text-white shadow"
-                  : "text-bone/50 hover:text-bone hover:bg-white/5"
-              )}
-            >
-              {t.icon}
-              <span className="hidden sm:inline">{t.label}</span>
-            </button>
-          ))}
+        {/* Tab content */}
+        <div className="flex-1 overflow-y-auto px-4 lg:px-8 py-6">
+          {tab === "overview"   && <TabOverview stats={botStats} />}
+          {tab === "embed"      && <TabEmbedBuilder channels={channels} guilds={guildArr} />}
+          {tab === "eventos"    && <TabEventos channels={channels} guilds={guildArr} roles={roles} />}
+          {tab === "noticias"   && <TabNoticias channels={channels} guilds={guildArr} roles={roles} />}
+          {tab === "welcome"    && <TabWelcome channels={channels} guilds={guildArr} />}
+          {tab === "logs"       && <TabLogs channels={channels} guilds={guildArr} />}
+          {tab === "verificar"  && <TabVerificar channels={channels} guilds={guildArr} roles={roles} />}
+          {tab === "autoroles"  && <TabAutoRoles guilds={guildArr} roles={roles} />}
+          {tab === "commands"   && <TabCommands commands={commands} />}
+          {tab === "botconfig"  && <TabBotConfig guilds={guildArr} channels={channels} />}
+          {tab === "ia"         && <TabIA guilds={guildArr} />}
+          {tab === "customcmds" && <TabCustomCmds guilds={guildArr} roles={roles} />}
+          {tab === "servidores" && <TabServidores />}
         </div>
-
-        {/* Tab content — todos recebem apenas o servidor selecionado */}
-        {tab === "overview"   && <TabOverview stats={botStats} />}
-        {tab === "embed"      && <TabEmbedBuilder channels={channels} guilds={guildArr} />}
-        {tab === "eventos"    && <TabEventos channels={channels} guilds={guildArr} roles={roles} />}
-        {tab === "noticias"   && <TabNoticias channels={channels} guilds={guildArr} roles={roles} />}
-        {tab === "welcome"    && <TabWelcome channels={channels} guilds={guildArr} />}
-        {tab === "logs"       && <TabLogs channels={channels} guilds={guildArr} />}
-        {tab === "verificar"  && <TabVerificar channels={channels} guilds={guildArr} roles={roles} />}
-        {tab === "autoroles"  && <TabAutoRoles guilds={guildArr} roles={roles} />}
-        {tab === "commands"   && <TabCommands commands={commands} />}
-        {tab === "botconfig"  && <TabBotConfig guilds={guildArr} channels={channels} />}
-        {tab === "ia"         && <TabIA guilds={guildArr} />}
-        {tab === "servidores" && <TabServidores />}
       </div>
+
+      {/* Chatbot Widget */}
+      <ChatBotWidget />
     </div>
   );
 }
+
