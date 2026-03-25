@@ -16,6 +16,16 @@ interface LogEntry {
   timestamp: string | Date;
 }
 
+const BOT_API = process.env.NEXT_PUBLIC_BOT_API || "http://localhost:3001";
+
+function getBotApiLabel() {
+  try {
+    return new URL(BOT_API).host;
+  } catch {
+    return BOT_API.replace(/^https?:\/\//, "");
+  }
+}
+
 const LOG_ICONS: Record<string, React.ReactNode> = {
   COMMAND: <Zap className="w-4 h-4" />,
   EMBED_WEBHOOK: <MessageSquare className="w-4 h-4" />,
@@ -79,7 +89,7 @@ export function LiveLogs() {
 
   useEffect(() => {
     // Fetch initial logs
-    fetch("http://localhost:3001/api/logs")
+    fetch(`${BOT_API}/api/logs`)
       .then((r) => r.json())
       .then((data: LogEntry[]) => {
         setLogs(data.slice(0, 15));
@@ -88,7 +98,7 @@ export function LiveLogs() {
       .catch(() => setLoading(false));
 
     // Connect to WebSocket
-    const socket = io("http://localhost:3001", {
+    const socket = io(BOT_API, {
       transports: ["websocket", "polling"],
     });
 
@@ -261,7 +271,7 @@ export function LiveLogs() {
                 {connected ? "Conectado ao WebSocket" : "Desconectado"}
               </span>
             </div>
-            <span className="text-xs text-bone/30 font-mono">localhost:3001</span>
+            <span className="text-xs text-bone/30 font-mono">{getBotApiLabel()}</span>
           </div>
         </div>
       </div>

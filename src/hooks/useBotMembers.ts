@@ -13,6 +13,7 @@ export interface BotMember {
 }
 
 const BOT_API = "http://localhost:3001";
+const API_BASE = process.env.NEXT_PUBLIC_BOT_API || BOT_API;
 
 export function useBotMembers() {
   const [members, setMembers] = useState<BotMember[]>([]);
@@ -20,7 +21,7 @@ export function useBotMembers() {
 
   useEffect(() => {
     const fetchMembers = () => {
-      fetch(`${BOT_API}/api/members`)
+      fetch(`${API_BASE}/api/members`)
         .then((r) => r.json())
         .then((data: BotMember[]) => {
           setMembers(Array.isArray(data) ? data : []);

@@ -22,6 +22,14 @@ import Stepper from "@/components/animations/Stepper";
 
 const BOT_API = process.env.NEXT_PUBLIC_BOT_API || "http://localhost:3001";
 
+function getBotApiLabel() {
+  try {
+    return new URL(BOT_API).host;
+  } catch {
+    return BOT_API.replace(/^https?:\/\//, "");
+  }
+}
+
 // ─── Auth helper (token armazenado no localStorage) ───────────────────────────
 const TOKEN_KEY = "itadori_discord_token";
 let _token: string | null = null;
@@ -571,7 +579,7 @@ function TabOverview({ stats }: { stats: Record<string, unknown> | null }) {
           {/* Terminal Footer */}
           <div className="flex items-center justify-between px-4 py-2 bg-white/3 border-t border-white/5 text-[10px] text-bone/30">
             <span className="font-mono">$ tail -f /var/log/itadori.log</span>
-            <span className="font-mono">localhost:3001</span>
+            <span className="font-mono">{getBotApiLabel()}</span>
           </div>
         </div>
         </BorderGlow>

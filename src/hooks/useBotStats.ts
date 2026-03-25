@@ -13,6 +13,7 @@ export interface BotStats {
 }
 
 const BOT_API = "http://localhost:3001";
+const API_BASE = process.env.NEXT_PUBLIC_BOT_API || BOT_API;
 
 export function useBotStats() {
   const [stats, setStats] = useState<BotStats | null>(null);
@@ -21,7 +22,7 @@ export function useBotStats() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch(`${BOT_API}/api/stats`);
+      const res = await fetch(`${API_BASE}/api/stats`);
       if (!res.ok) throw new Error("API error");
       const data: BotStats = await res.json();
       if (data && data.botName) {
