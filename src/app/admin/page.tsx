@@ -12,6 +12,12 @@ import {
 } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 import InteractiveGrid from "@/components/InteractiveGrid";
+import Aurora from "@/components/animations/Aurora";
+import BlurText from "@/components/animations/BlurText";
+import ScrollReveal from "@/components/animations/ScrollReveal";
+import ScrollVelocity from "@/components/animations/ScrollVelocity";
+import BorderGlow from "@/components/animations/BorderGlow";
+import CircularText from "@/components/animations/CircularText";
 
 const BOT_API = process.env.NEXT_PUBLIC_BOT_API || "http://localhost:3001";
 
@@ -457,13 +463,18 @@ function TabOverview({ stats }: { stats: Record<string, unknown> | null }) {
             <Check className="w-4 h-4" />
             <span>Bot online — <strong>{stats.botName as string}</strong></span>
           </div>
+          <div className="mb-6 hidden sm:block">
+            <ScrollVelocity text="ITADORI BOT — PAINEL ADMIN — ESTATÍSTICAS" velocity={3} className="text-crimson/10 font-bebas text-5xl tracking-widest" />
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {items.map(it => (
-              <div key={it.label} className="bg-white/3 border border-white/8 rounded-xl p-5 text-center">
-                <div className="text-crimson mb-2 flex justify-center">{it.icon}</div>
-                <p className="text-3xl font-bebas text-bone">{(it.value ?? 0).toLocaleString("pt-BR")}</p>
-                <p className="text-xs text-bone/40 mt-1">{it.label}</p>
-              </div>
+            {items.map((it, idx) => (
+              <ScrollReveal direction="up" delay={idx * 50} key={it.label} className="h-full">
+                <div className="bg-white/3 border border-white/8 rounded-xl p-5 text-center h-full hover:bg-white/5 transition-colors">
+                  <div className="text-crimson mb-2 flex justify-center">{it.icon}</div>
+                  <p className="text-3xl font-bebas text-bone">{(it.value ?? 0).toLocaleString("pt-BR")}</p>
+                  <p className="text-xs text-bone/40 mt-1">{it.label}</p>
+                </div>
+              </ScrollReveal>
             ))}
           </div>
         </>
@@ -482,8 +493,14 @@ function TabOverview({ stats }: { stats: Record<string, unknown> | null }) {
           </div>
         </div>
 
-        {/* Glass Terminal */}
-        <div className="relative rounded-xl overflow-hidden border border-white/10 bg-gradient-to-br from-[#0a0a0c]/90 to-[#12121a]/90 backdrop-blur-xl shadow-2xl">
+        {/* Circular Deco Text */}
+        <div className="absolute right-8 top-12 md:right-16 md:top-24 opacity-20 pointer-events-none hidden lg:block z-0 mix-blend-screen">
+          <CircularText text="LIVE • SYSTEM • LOGS • OVERVIEW • " size={180} duration={20} />
+        </div>
+
+        {/* Glass Terminal wrapped in BorderGlow */}
+        <BorderGlow glowColor="rgba(196, 18, 48, 0.4)" wrapperClassName="rounded-xl shadow-2xl z-10">
+          <div className="relative overflow-hidden bg-gradient-to-br from-[#0a0a0c]/90 to-[#12121a]/90 backdrop-blur-xl">
           {/* Terminal Header */}
           <div className="flex items-center justify-between px-4 py-2.5 bg-white/5 border-b border-white/10">
             <div className="flex items-center gap-2">
@@ -555,6 +572,7 @@ function TabOverview({ stats }: { stats: Record<string, unknown> | null }) {
             <span className="font-mono">localhost:3001</span>
           </div>
         </div>
+        </BorderGlow>
       </div>
     </div>
   );
@@ -3072,19 +3090,19 @@ function LoginScreen() {
 
   return (
     <div className="min-h-screen bg-[#08080A] flex items-center justify-center px-4">
-      <div className="absolute inset-0 overflow-hidden">
-        <InteractiveGrid />
-      </div>
+      <Aurora colorStops={["#3b0512", "#c41230", "#08080a"]} amplitude={0.8} />
 
-      <div className="relative w-full max-w-sm bg-[#111113] border border-white/8 rounded-2xl p-8 shadow-2xl">
+      <div className="relative w-full max-w-sm bg-[#111113] border border-white/8 rounded-2xl p-8 shadow-2xl z-10">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-14 h-14 rounded-2xl bg-crimson flex items-center justify-center mb-3 shadow-lg shadow-crimson/30">
             <Shield className="w-7 h-7 text-white" />
           </div>
-          <h1 className="font-bebas text-3xl tracking-wider text-bone">
-            Itadori <span className="text-crimson">Admin</span>
-          </h1>
+          <BlurText 
+            text="Itadori Admin" 
+            delay={20} 
+            className="font-bebas text-3xl tracking-wider text-bone"
+          />
           <p className="text-bone/40 text-sm mt-1 text-center">
             Entre com sua conta do Discord para gerenciar seus servidores
           </p>
