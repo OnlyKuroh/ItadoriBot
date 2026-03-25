@@ -458,28 +458,29 @@ function TabOverview({ stats }: { stats: Record<string, unknown> | null }) {
           <span>Bot offline. Inicie com <code className="font-mono bg-black/30 px-1.5 py-0.5 rounded">node index.js</code> na pasta <code className="font-mono bg-black/30 px-1.5 py-0.5 rounded">BOT DISCORD</code> para ver dados reais.</span>
         </div>
       )}
-      {stats && (
-        <>
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
-            <Check className="w-4 h-4" />
-            <span>Bot online — <strong>{stats.botName as string}</strong></span>
+        {stats && (
+          <>
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
+              <Check className="w-4 h-4" />
+              <span>Bot online — <strong>{stats.botName as string}</strong></span>
           </div>
           <div className="mb-6 hidden sm:block">
             <ScrollVelocity text="ITADORI BOT — PAINEL ADMIN — ESTATÍSTICAS" velocity={3} className="text-crimson/10 font-bebas text-5xl tracking-widest" />
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {items.map((it, idx) => (
-              <ScrollReveal direction="up" delay={idx * 50} key={it.label} className="h-full">
-                <div className="bg-white/3 border border-white/8 rounded-xl p-5 text-center h-full hover:bg-white/5 transition-colors">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {items.map((it, idx) => (
+                <ScrollReveal direction="up" delay={idx * 50} key={it.label} className="h-full">
+                  <div className="bg-white/3 border border-white/8 rounded-xl p-5 text-center h-full hover:bg-white/5 transition-colors">
                   <div className="text-crimson mb-2 flex justify-center">{it.icon}</div>
                   <p className="text-3xl font-bebas text-bone">{(it.value ?? 0).toLocaleString("pt-BR")}</p>
                   <p className="text-xs text-bone/40 mt-1">{it.label}</p>
                 </div>
-              </ScrollReveal>
-            ))}
-          </div>
-        </>
-      )}
+                </ScrollReveal>
+              ))}
+            </div>
+
+          </>
+        )}
 
       {/* Terminal-style Logs */}
       <div className="mt-8">
@@ -2878,27 +2879,27 @@ interface SidebarGroup { label: string; items: SidebarItem[]; }
 
 const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
-    label: "Geral",
+    label: "Painel",
     items: [
       { id: "overview",   label: "Visão Geral",   icon: <Zap className="w-4 h-4" /> },
       { id: "servidores", label: "Servidores",     icon: <Globe className="w-4 h-4" /> },
     ],
   },
   {
-    label: "Configuração",
+    label: "Servidor",
     items: [
-      { id: "botconfig",  label: "Bot Config",     icon: <Bot className="w-4 h-4" /> },
+      { id: "botconfig",  label: "Configurações",  icon: <Bot className="w-4 h-4" /> },
       { id: "welcome",    label: "Boas-Vindas",    icon: <Users className="w-4 h-4" /> },
-      { id: "logs",       label: "Set Logs",        icon: <Bell className="w-4 h-4" /> },
+      { id: "logs",       label: "Logs",            icon: <Bell className="w-4 h-4" /> },
       { id: "verificar",  label: "Verificação",     icon: <Shield className="w-4 h-4" /> },
-      { id: "autoroles",  label: "Auto-Roles",      icon: <UserPlus className="w-4 h-4" /> },
+      { id: "autoroles",  label: "Cargos Autom.",   icon: <UserPlus className="w-4 h-4" /> },
     ],
   },
   {
     label: "Ferramentas",
     items: [
       { id: "embed",      label: "Embed Builder",   icon: <Send className="w-4 h-4" /> },
-      { id: "customcmds", label: "Cmds Custom",     icon: <Terminal className="w-4 h-4" /> },
+      { id: "customcmds", label: "Comandos Pers.",  icon: <Terminal className="w-4 h-4" /> },
       { id: "commands",   label: "Comandos",         icon: <Hash className="w-4 h-4" /> },
     ],
   },
@@ -2907,7 +2908,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     items: [
       { id: "eventos",    label: "Eventos",          icon: <Radio className="w-4 h-4" /> },
       { id: "noticias",   label: "Notícias",         icon: <Newspaper className="w-4 h-4" /> },
-      { id: "ia",         label: "IA Config",         icon: <Activity className="w-4 h-4" /> },
+      { id: "ia",         label: "Assistente IA",    icon: <Activity className="w-4 h-4" /> },
     ],
   },
 ];
@@ -2927,22 +2928,26 @@ function Sidebar({
   const avatarUrl = user?.avatar
     ? `https://cdn.discordapp.com/avatars/${user.userId}/${user.avatar}.webp?size=32`
     : null;
+  const currentTab = TABS.find((item) => item.id === tab);
 
   return (
     <aside className={cn(
-      "fixed left-0 top-0 h-full z-50 flex flex-col bg-[#0C0C0E] border-r border-white/5 transition-all duration-300",
+      "fixed left-0 top-0 h-full z-50 flex flex-col bg-[linear-gradient(180deg,#0b0b0e_0%,#111117_100%)] border-r border-white/5 transition-all duration-300",
       collapsed ? "w-[64px]" : "w-[240px]",
       "lg:relative lg:flex",
     )}>
       {/* Logo */}
-      <div className="h-14 flex items-center gap-2 px-4 border-b border-white/5 flex-shrink-0">
+      <div className="h-16 flex items-center gap-2 px-4 border-b border-white/5 flex-shrink-0">
         <div className="w-8 h-8 rounded-xl bg-crimson flex items-center justify-center flex-shrink-0 shadow-lg shadow-crimson/20">
           <span className="font-bebas text-white text-sm">I</span>
         </div>
         {!collapsed && (
-          <span className="font-bebas text-lg tracking-wider text-bone whitespace-nowrap">
-            Itadori <span className="text-crimson">Admin</span>
-          </span>
+          <div className="min-w-0">
+            <span className="font-bebas text-lg tracking-wider text-bone whitespace-nowrap">
+              Itadori <span className="text-crimson">Admin</span>
+            </span>
+            <p className="text-[10px] uppercase tracking-[0.24em] text-bone/28">Controle do servidor</p>
+          </div>
         )}
       </div>
 
@@ -2950,7 +2955,7 @@ function Sidebar({
       <button
         onClick={onSwitchGuild}
         className={cn(
-          "mx-3 mt-3 flex items-center gap-2 rounded-lg bg-white/3 border border-white/8 hover:border-crimson/30 transition-colors",
+          "mx-3 mt-3 flex items-center gap-2 rounded-xl bg-white/3 border border-white/8 hover:border-crimson/30 transition-colors",
           collapsed ? "p-2 justify-center" : "p-2.5",
         )}
         title={collapsed ? guild.name : "Trocar servidor"}
@@ -2970,6 +2975,16 @@ function Sidebar({
         )}
       </button>
 
+      {!collapsed && currentTab && (
+        <div className="mx-3 mt-3 rounded-2xl border border-crimson/15 bg-crimson/8 px-3 py-3">
+          <p className="text-[10px] uppercase tracking-[0.24em] text-crimson/70">Agora editando</p>
+          <div className="mt-2 flex items-center gap-2 text-bone">
+            {currentTab.icon}
+            <span className="text-sm font-medium">{currentTab.label}</span>
+          </div>
+        </div>
+      )}
+
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4 custom-scrollbar">
         {SIDEBAR_GROUPS.map(group => (
@@ -2986,7 +3001,7 @@ function Sidebar({
                   onClick={() => setTab(item.id)}
                   title={collapsed ? item.label : undefined}
                   className={cn(
-                    "w-full flex items-center gap-2.5 rounded-lg transition-all",
+                    "w-full flex items-center gap-2.5 rounded-xl transition-all",
                     collapsed ? "p-2.5 justify-center" : "px-3 py-2",
                     tab === item.id
                       ? "bg-crimson/15 text-crimson border border-crimson/20 shadow-sm shadow-crimson/5"
