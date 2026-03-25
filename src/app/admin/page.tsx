@@ -18,6 +18,7 @@ import ScrollReveal from "@/components/animations/ScrollReveal";
 import ScrollVelocity from "@/components/animations/ScrollVelocity";
 import BorderGlow from "@/components/animations/BorderGlow";
 import CircularText from "@/components/animations/CircularText";
+import Stepper from "@/components/animations/Stepper";
 
 const BOT_API = process.env.NEXT_PUBLIC_BOT_API || "http://localhost:3001";
 
@@ -920,77 +921,122 @@ function TabWelcome({ channels, guilds }: { channels: Channel[]; guilds: Guild[]
     fields: [],
   };
 
-  return (
-    <div className="grid lg:grid-cols-2 gap-6">
-      {/* Form */}
-      <div className="space-y-5">
-        <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-sm text-amber-300 space-y-1">
-          <p className="font-semibold">Formato da mensagem:</p>
-          <code className="block font-mono text-xs bg-black/30 rounded p-2">Título | Descrição com @USER e #Server</code>
-          <p className="text-xs text-amber-400/70">O <code>|</code> separa o título da descrição. Use as tags para personalizar.</p>
-        </div>
+  const steps = [
+    {
+      id: "channel",
+      label: "Geral",
+      description: "Escolha qual servidor e canal irá receber as notificações de boas-vindas.",
+      content: (
+        <div className="space-y-4">
+          {guilds.length > 0 && (
+            <Field label="Servidor">
+              <select value={guildId} onChange={e => setGuildId(e.target.value)} className={inputCls}>
+                {guilds.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </Field>
+          )}
 
-        {guilds.length > 0 && (
-          <Field label="Servidor">
-            <select value={guildId} onChange={e => setGuildId(e.target.value)} className={inputCls}>
-              {guilds.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+          <Field label="Canal de Boas-Vindas">
+            <select value={config.channelId || ""} onChange={e => setConfig(p => ({ ...p, channelId: e.target.value }))} className={inputCls}>
+              <option value="">— Selecione um canal —</option>
+              {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </Field>
-        )}
-
-        <Field label="Canal de Boas-Vindas">
-          <select value={config.channelId || ""} onChange={e => setConfig(p => ({ ...p, channelId: e.target.value }))} className={inputCls}>
-            <option value="">— Selecione um canal —</option>
-            {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </Field>
-
-        <Field label="Mensagem" tip="Formato: Título | Descrição. Suporta @USER, #Server, #Horario.">
-          <div className="flex gap-2 mb-1.5">
-            <TagsPopup onInsert={insertTag} />
-          </div>
-          <textarea
-            value={config.text}
-            onChange={e => setConfig(p => ({ ...p, text: e.target.value }))}
-            placeholder="Bem-vindo ao {server}! | @USER chegou ao servidor. Leia as regras!"
-            className={textareaCls} rows={3}
-          />
-        </Field>
-
-        <Field label="Banner" tip="Imagem exibida no embed de boas-vindas.">
-          <div className="flex gap-2">
-            <input value={config.bannerUrl || ""} onChange={e => setConfig(p => ({ ...p, bannerUrl: e.target.value }))}
-              placeholder="https://... ou faça upload" className={cn(inputCls, "flex-1")} />
-            <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
-              className="flex items-center gap-1.5 px-3 text-xs rounded-lg bg-crimson/10 border border-crimson/20 text-crimson hover:bg-crimson/20 transition-colors whitespace-nowrap">
-              <Upload className="w-3.5 h-3.5" />{uploading ? "..." : "Upload"}
-            </button>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) uploadBanner(f); }} />
-          </div>
-        </Field>
-
-        {result && (
-          <p className={cn("text-sm px-4 py-2 rounded-lg", result.ok
-            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-            : "bg-red-500/10 text-red-400 border border-red-500/20")}>
-            {result.msg}
-          </p>
-        )}
-        <button type="button" onClick={save} disabled={saving}
-          className="w-full py-3 bg-crimson rounded-xl text-white font-semibold hover:bg-crimson-light transition-colors disabled:opacity-50">
-          {saving ? "Salvando..." : "Salvar Configuração"}
-        </button>
-      </div>
-
-      {/* Preview */}
-      <div className="hidden lg:block">
-        <p className="text-xs font-semibold text-bone/40 uppercase tracking-wider mb-3">Preview — Boas-Vindas</p>
-        <div className="sticky top-4">
-          <DiscordPreview embed={previewEmbed} webhookName="Itadori Bot" webhookAvatar=""
-            guildName={guilds.find(g => g.id === guildId)?.name} />
         </div>
+      ),
+    },
+    {
+      id: "message",
+      label: "Conteúdo",
+      description: "Escreva a mensagem de boas-vindas do seu servidor de forma épica.",
+      content: (
+        <div className="space-y-4">
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-sm text-amber-300 space-y-1">
+            <code className="block font-mono text-xs bg-black/30 rounded p-2">Título | Descrição com @USER e #Server</code>
+            <p className="text-xs text-amber-400/70">O separador <code>|</code> divide o título da descrição.</p>
+          </div>
+
+          <Field label="Sua Mensagem" tip="Suporta tags dinâmicas como @USER, #Server, #Horario.">
+            <div className="flex gap-2 mb-1.5 flex-wrap">
+              <TagsPopup onInsert={insertTag} />
+            </div>
+            <textarea
+              value={config.text}
+              onChange={e => setConfig(p => ({ ...p, text: e.target.value }))}
+              placeholder="Bem-vindo ao servidor! | Que bom que você chegou, @USER!"
+              className={textareaCls} rows={4}
+            />
+          </Field>
+        </div>
+      ),
+    },
+    {
+      id: "banner",
+      label: "Aparência",
+      description: "Adicione um Banner premium pra deixar sua mensagem ainda mais marcante.",
+      content: (
+        <div className="space-y-4">
+          <Field label="Banner URL ou Upload" tip="Imagem que aparecerá destacada no Embed de entrada.">
+            <div className="flex gap-2">
+              <input value={config.bannerUrl || ""} onChange={e => setConfig(p => ({ ...p, bannerUrl: e.target.value }))}
+                placeholder="https://..." className={cn(inputCls, "flex-1")} />
+              <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
+                className="flex items-center gap-1.5 px-3 text-xs rounded-lg bg-crimson/10 border border-crimson/20 text-crimson hover:bg-crimson/20 transition-colors whitespace-nowrap">
+                <Upload className="w-3.5 h-3.5" />{uploading ? "..." : "Upload local"}
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) uploadBanner(f); }} />
+            </div>
+          </Field>
+          
+          <div className="mt-8">
+            <p className="text-xs font-semibold text-bone/40 uppercase tracking-wider mb-2">Live Preview</p>
+            <div className="border border-white/5 bg-black/20 rounded-xl p-4">
+              <DiscordPreview embed={previewEmbed} webhookName="Itadori Bot" webhookAvatar=""
+                guildName={guilds.find(g => g.id === guildId)?.name} />
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "confirm",
+      label: "Confirmar",
+      description: "Revise tudo antes de aplicar a maldição.",
+      content: (
+        <div className="flex flex-col items-center justify-center p-6 space-y-6 text-center">
+          <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mb-2">
+            <Check className="w-8 h-8 text-emerald-400" />
+          </div>
+          <h2 className="text-xl font-bold">Quase lá!</h2>
+          <p className="text-sm text-bone/50 max-w-sm">
+            Os dados foram estruturados. Canal configurado para <span className="font-semibold text-bone">#{channels.find(c => c.id === config.channelId)?.name || "?"}</span>.
+          </p>
+          
+          {result && (
+            <p className={cn("text-sm px-4 py-2 rounded-lg mt-4", result.ok
+              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+              : "bg-red-500/10 text-red-400 border border-red-500/20")}>
+              {result.msg}
+            </p>
+          )}
+        </div>
+      ),
+    }
+  ];
+
+  return (
+    <div className="max-w-4xl mx-auto py-8">
+      <div className="mb-8">
+         <h1 className="text-2xl font-bebas tracking-wide mb-1 text-bone">Sistema de Boas-Vindas</h1>
+         <p className="text-bone/50 text-sm">Construa o cenário de recepção perfeito pro seu servidor.</p>
       </div>
+
+      <Stepper 
+        steps={steps} 
+        onComplete={save} 
+        completeText={saving ? "Salvando..." : "Implantar Maldição"} 
+      />
     </div>
   );
 }
