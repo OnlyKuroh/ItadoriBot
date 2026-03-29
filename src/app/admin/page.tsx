@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import {
   Settings, Send, Zap, Users, Hash, Globe, AlertCircle,
@@ -68,38 +68,76 @@ interface LogEntry { id?: number; type: string; content: string; guild_id?: stri
 // ─── Discord Markdown Renderer ────────────────────────────────────────────────
 function renderMarkdown(text: string): string {
   if (!text) return "";
-  return text
+
+  // Processar \n especial entre H1s: "# Título\n Continuação" vira H1 + subtext sem gap
+  // Suporta: "# Titulo\nContinuação" — continua na mesma linha visual sem criar 2 H1s separados
+  // A barra invertida literal \n no conteúdo vira uma quebra compacta
+  let processed = text.replace(/\\n/g, "\x00COMPACT_BREAK\x00");
+
+  return processed
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/__(.+?)__/g, "<u>$1</u>")
-    .replace(/~~(.+?)~~/g, "<s>$1</s>")
-    .replace(/\|\|(.+?)\|\|/g,
+    .replace(/\*\*\*(.+?)\*\*\*/gs, "<strong><em>$1</em></strong>")
+    .replace(/\*\*(.+?)\*\*/gs, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/gs, "<em>$1</em>")
+    .replace(/__(.+?)__/gs, "<u>$1</u>")
+    .replace(/~~(.+?)~~/gs, "<s>$1</s>")
+    .replace(/\|\|(.+?)\|\|/gs,
       '<span style="background:#1E1F22;border-radius:2px;padding:0 2px;cursor:pointer" title="Spoiler">████</span>')
     .replace(/```[\w]*\n?([\s\S]+?)```/g,
       '<code style="display:block;background:#1E1F22;border-radius:4px;padding:8px;font-family:monospace;font-size:12px;white-space:pre">$1</code>')
     .replace(/`(.+?)`/g,
       '<code style="background:#1E1F22;border-radius:3px;padding:1px 5px;font-family:monospace;font-size:12px">$1</code>')
+    // Citação múltipla >>> (antes de >)
+    .replace(/^&gt;&gt;&gt; (.+)/gm,
+      '<div style="border-left:3px solid #4F545C;padding-left:10px;color:#B9BBBE;margin:2px 0;font-style:italic">$1</div>')
     .replace(/^&gt; (.+)/gm,
       '<div style="border-left:3px solid #4F545C;padding-left:10px;color:#B9BBBE;margin:2px 0">$1</div>')
+    // -# texto pequeno (subtext do Discord)
+    .replace(/^-# (.+)$/gm,
+      '<span style="display:block;font-size:11px;color:#87898C;margin:1px 0">$1</span>')
     .replace(/^### (.+)$/gm,
       '<span style="display:block;font-size:15px;font-weight:700;color:#F2F3F5;margin:4px 0">$1</span>')
     .replace(/^## (.+)$/gm,
       '<span style="display:block;font-size:19px;font-weight:700;color:#F2F3F5;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:3px;margin:6px 0 3px">$1</span>')
     .replace(/^# (.+)$/gm,
       '<span style="display:block;font-size:24px;font-weight:800;color:#F2F3F5;border-bottom:2px solid rgba(255,255,255,0.12);padding-bottom:4px;margin:8px 0 4px">$1</span>')
+    // Divisória responsiva — renderiza como hr estilizada no preview
+    .replace(/─{3,}/g,
+      '<hr style="border:none;border-top:1px solid rgba(255,255,255,0.12);margin:6px 0;opacity:0.5"/>')
+    // \x00COMPACT_BREAK\x00 = quebra de linha sem margem (para "# H1\nContinuação")
+    .replace(/\x00COMPACT_BREAK\x00/g,
+      '<br style="display:block;margin:0;content:\'\'"/>')
     .replace(/\n/g, "<br>");
 }
 
-function previewTags(text: string, guildName = "Seu Servidor"): string {
+function previewTags(text: string, guildName = "Seu Servidor", extraImages: string[] = [], cargoMention = "@Cargo"): string {
   const now = new Date();
-  const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  return text
-    .replace(/@USER/gi, "@NomeDoUsuário")
+  const time = now.toLocaleTimeString("pt-BR", {
+    hour: "2-digit", minute: "2-digit",
+    timeZone: "America/Sao_Paulo",
+  });
+  let result = text
+    // Novo sistema ${} — variáveis principais
+    .replace(/\$\{USER\}/gi, "<@NomeDoUsuário>")
+    .replace(/\$\{USERNAME\}/gi, "NomeDoUsuário")
+    .replace(/\$\{SERVER\}/gi, guildName)
+    .replace(/\$\{HORARIO\}/gi, time)
+    .replace(/\$\{USER\.PERFIL\}/gi, "https://cdn.discordapp.com/embed/avatars/0.png")
+    .replace(/\$\{USER\.BANNER\}/gi, "")
+    .replace(/\$\{CARGO\}/gi, cargoMention)
+    // Variável de divisória — linha responsiva baseada no contexto
+    .replace(/\$\{DIVISORIA\}/gi, "─────────────────")
+    // Legado para compatibilidade (serão convertidos no envio)
+    .replace(/@USER/gi, "<@NomeDoUsuário>")
     .replace(/\{user\}/gi, "NomeDoUsuário")
     .replace(/#Server/gi, guildName).replace(/\{server\}/gi, guildName)
     .replace(/#Horario/gi, time).replace(/\{hora\}/gi, time);
+  // IMG1..IMG5 — usa URL real se disponível, senão placeholder
+  result = result.replace(/\$\{IMG([1-5])\}/gi, (_, n) => {
+    const url = extraImages[Number(n) - 1];
+    return url || `[IMG${n}]`;
+  });
+  return result;
 }
 
 // ─── Discord Embed Preview ────────────────────────────────────────────────────
@@ -112,8 +150,8 @@ function EmbedBlock({ color, children }: { color: string; children: React.ReactN
   );
 }
 
-function DiscordPreview({ embed, webhookName, webhookAvatar, guildName }: {
-  embed: EmbedState; webhookName: string; webhookAvatar: string; guildName?: string;
+function DiscordPreview({ embed, webhookName, webhookAvatar, guildName, extraImages = [], cargoMention = "@Cargo" }: {
+  embed: EmbedState; webhookName: string; webhookAvatar: string; guildName?: string; extraImages?: string[]; cargoMention?: string;
 }) {
   const now  = new Date();
   const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -170,11 +208,11 @@ function DiscordPreview({ embed, webhookName, webhookAvatar, guildName }: {
                   )}
                   {embed.title && (
                     <p className="text-[#F2F3F5] font-semibold text-sm leading-snug"
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(previewTags(embed.title, guildName)) }} />
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(previewTags(embed.title, guildName, extraImages, cargoMention)) }} />
                   )}
                   {embed.description && (
                     <p className="text-[#DBDEE1] text-sm leading-relaxed"
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(previewTags(embed.description, guildName)) }} />
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(previewTags(embed.description, guildName, extraImages, cargoMention)) }} />
                   )}
                   {bundledFields.length > 0 && (
                     <div className="grid gap-2" style={{
@@ -235,40 +273,79 @@ function DiscordPreview({ embed, webhookName, webhookAvatar, guildName }: {
 }
 
 // ─── Markdown Toolbar ─────────────────────────────────────────────────────────
-const MD_BUTTONS = [
-  { label: "B", title: "Negrito", wrap: ["**", "**"], bold: true },
-  { label: "I", title: "Itálico", wrap: ["*", "*"], italic: true },
-  { label: "U", title: "Sublinhado", wrap: ["__", "__"], underline: true },
-  { label: "S̶", title: "Tachado", wrap: ["~~", "~~"] },
-  { label: "`", title: "Código inline", wrap: ["`", "`"] },
-  { label: "```", title: "Bloco de código", wrap: ["```\n", "\n```"] },
-  { label: "||", title: "Spoiler", wrap: ["||", "||"] },
-  { label: ">", title: "Citação", prefix: "> " },
-  { label: "H1", title: "Título H1 (# texto)", prefix: "# " },
-  { label: "H2", title: "Título H2 (## texto)", prefix: "## " },
-  { label: "H3", title: "Título H3 (### texto)", prefix: "### " },
+interface MdButton {
+  label: string;
+  title: string;
+  wrap?: [string, string];
+  prefix?: string;
+  insert?: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+}
+
+const MD_BUTTONS: MdButton[] = [
+  { label: "B",   title: "Negrito",                                           wrap: ["**", "**"], bold: true },
+  { label: "I",   title: "Itálico",                                           wrap: ["*", "*"],   italic: true },
+  { label: "U",   title: "Sublinhado",                                        wrap: ["__", "__"], underline: true },
+  { label: "S̶",   title: "Tachado",                                           wrap: ["~~", "~~"] },
+  { label: "`",   title: "Código inline",                                     wrap: ["`", "`"] },
+  { label: "```", title: "Bloco de código",                                   wrap: ["```\n", "\n```"] },
+  { label: "||",  title: "Spoiler",                                           wrap: ["||", "||"] },
+  { label: ">",   title: "Citação simples",                                   prefix: "> " },
+  { label: ">>>", title: "Citação múltipla",                                  prefix: ">>> " },
+  { label: "H1",  title: "Título H1 (# texto)",                              prefix: "# " },
+  { label: "H2",  title: "Título H2 (## texto)",                             prefix: "## " },
+  { label: "H3",  title: "Título H3 (### texto)",                            prefix: "### " },
+  { label: "-#",  title: "Texto pequeno / subtext (-# texto)",               prefix: "-# " },
+  { label: "\\n", title: "Quebra de linha compacta após H1 (sem gap duplo)", insert: "\\n" },
 ];
 
-function MdToolbar({ target, onChange }: {
+function MdToolbar({ target, onChange, textareaRef }: {
   target: string;
   onChange: (val: string) => void;
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
 }) {
-  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const apply = useCallback((btn: MdButton) => {
+    const el = textareaRef?.current;
+    if (!el) {
+      // Fallback: append/insert at end
+      if ("wrap" in btn && btn.wrap) {
+        onChange(target + btn.wrap[0] + btn.wrap[1]);
+      } else if ("prefix" in btn && btn.prefix) {
+        onChange(target + btn.prefix);
+      } else if ("insert" in btn && btn.insert) {
+        onChange(target + btn.insert);
+      }
+      return;
+    }
 
-  const apply = useCallback((btn: typeof MD_BUTTONS[0]) => {
-    const el = ref.current;
-    if (!el) return;
     const start = el.selectionStart ?? 0;
     const end = el.selectionEnd ?? 0;
     const selected = target.slice(start, end);
     let newVal = target;
-    if (btn.wrap) {
+    let newCursorPos = end;
+
+    if ("insert" in btn && btn.insert) {
+      // Inserção literal no ponto de cursor
+      newVal = target.slice(0, start) + btn.insert + target.slice(end);
+      newCursorPos = start + btn.insert.length;
+    } else if ("wrap" in btn && btn.wrap) {
       newVal = target.slice(0, start) + btn.wrap[0] + selected + btn.wrap[1] + target.slice(end);
-    } else if (btn.prefix) {
+      newCursorPos = start + btn.wrap[0].length + selected.length + btn.wrap[1].length;
+    } else if ("prefix" in btn && btn.prefix) {
       newVal = target.slice(0, start) + btn.prefix + selected + target.slice(end);
+      newCursorPos = start + btn.prefix.length + selected.length;
     }
+
     onChange(newVal);
-  }, [target, onChange]);
+
+    // Restaurar cursor/seleção após a atualização de estado
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(newCursorPos, newCursorPos);
+    });
+  }, [target, onChange, textareaRef]);
 
   return (
     <div className="flex flex-wrap gap-1 mb-1.5">
@@ -292,26 +369,245 @@ function MdToolbar({ target, onChange }: {
   );
 }
 
-// ─── Tags Helper Popup ────────────────────────────────────────────────────────
-function TagsPopup({ onInsert }: { onInsert: (tag: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const TAGS = [
-    { tag: "@USER", desc: "Menciona o usuário que entrou/usou o comando" },
-    { tag: "#Server", desc: "Nome do servidor (não o ID)" },
-    { tag: "#Horario", desc: "Hora que o usuário entrou ou usou o comando" },
-  ];
+// ─── Variáveis disponíveis (usadas em autocomplete e TagsPopup) ──────────────
+const ALL_VARS = [
+  { tag: "${USER}",        desc: "Menciona o usuário (@NomeDoUsuário)", group: "text" },
+  { tag: "${USERNAME}",    desc: "Nome do usuário sem menção", group: "text" },
+  { tag: "${SERVER}",      desc: "Nome do servidor", group: "text" },
+  { tag: "${HORARIO}",     desc: "Hora atual (Brasília)", group: "text" },
+  { tag: "${CARGO}",       desc: "Menciona um cargo configurado", group: "text" },
+  { tag: "${DIVISORIA}",   desc: "Linha divisória responsiva ao texto", group: "text" },
+  { tag: "${USER.PERFIL}", desc: "URL da foto de perfil do usuário", group: "image" },
+  { tag: "${USER.BANNER}", desc: "URL do banner do usuário", group: "image" },
+  { tag: "${IMG1}",        desc: "Primeira imagem do container extra", group: "image" },
+  { tag: "${IMG2}",        desc: "Segunda imagem do container extra", group: "image" },
+  { tag: "${IMG3}",        desc: "Terceira imagem do container extra", group: "image" },
+  { tag: "${IMG4}",        desc: "Quarta imagem do container extra", group: "image" },
+  { tag: "${IMG5}",        desc: "Quinta imagem do container extra", group: "image" },
+];
+
+type VarEntry = typeof ALL_VARS[number];
+
+// ─── Autocomplete de variáveis ${} ───────────────────────────────────────────
+// Componente que envolve um textarea/input e detecta quando o usuário digita ${
+// para mostrar um dropdown de sugestões de variáveis
+function useVarAutocomplete({
+  value,
+  onChange,
+  inputRef,
+  imageOnly = false,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  inputRef: React.RefObject<HTMLTextAreaElement | HTMLInputElement | null>;
+  imageOnly?: boolean;
+}) {
+  const [suggestions, setSuggestions] = useState<VarEntry[]>([]);
+  const [triggerStart, setTriggerStart] = useState<number>(-1);
+  const [selectedIdx, setSelectedIdx] = useState(0);
+
+  const vars = imageOnly ? ALL_VARS.filter(v => v.group === "image") : ALL_VARS;
+
+  const checkTrigger = useCallback((val: string, cursor: number) => {
+    // Procura ${... antes do cursor
+    const before = val.slice(0, cursor);
+    const match = before.match(/\$\{([A-Z0-9._]*)$/i);
+    if (match) {
+      const query = match[1].toUpperCase();
+      const filtered = vars.filter(v => v.tag.slice(2, -1).startsWith(query)); // remove ${ e }
+      setSuggestions(filtered);
+      setTriggerStart(cursor - match[0].length);
+      setSelectedIdx(0);
+    } else {
+      setSuggestions([]);
+      setTriggerStart(-1);
+    }
+  }, [vars]);
+
+  const insertSuggestion = useCallback((v: VarEntry) => {
+    if (!inputRef.current || triggerStart < 0) return;
+    const cursor = inputRef.current.selectionStart ?? value.length;
+    const newVal = value.slice(0, triggerStart) + v.tag + value.slice(cursor);
+    onChange(newVal);
+    setSuggestions([]);
+    setTriggerStart(-1);
+    requestAnimationFrame(() => {
+      if (!inputRef.current) return;
+      const pos = triggerStart + v.tag.length;
+      inputRef.current.focus();
+      inputRef.current.setSelectionRange(pos, pos);
+    });
+  }, [value, onChange, inputRef, triggerStart]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (suggestions.length === 0) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, suggestions.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); }
+    else if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      insertSuggestion(suggestions[selectedIdx]);
+    } else if (e.key === "Escape") {
+      setSuggestions([]);
+    }
+  }, [suggestions, selectedIdx, insertSuggestion]);
+
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement> | React.ChangeEvent<HTMLInputElement>) => {
+    onChange(e.target.value);
+    checkTrigger(e.target.value, e.target.selectionStart ?? e.target.value.length);
+  }, [onChange, checkTrigger]);
+
+  const handleClick = useCallback((e: React.MouseEvent<HTMLTextAreaElement> | React.MouseEvent<HTMLInputElement>) => {
+    const el = e.currentTarget as HTMLTextAreaElement | HTMLInputElement;
+    checkTrigger(el.value, el.selectionStart ?? el.value.length);
+  }, [checkTrigger]);
+
+  return { suggestions, selectedIdx, setSelectedIdx, handleKeyDown, handleChange, handleClick, insertSuggestion };
+}
+
+// Wrapper de textarea com autocomplete de variáveis
+function VarTextarea({
+  value, onChange, placeholder, className, rows, imageOnly, textareaRef,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+  rows?: number;
+  imageOnly?: boolean;
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
+}) {
+  const internalRef = useRef<HTMLTextAreaElement>(null);
+  // Sync internalRef with external textareaRef if provided
+  useEffect(() => {
+    if (textareaRef && internalRef.current) {
+      (textareaRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = internalRef.current;
+    }
+  });
+
+  const ac = useVarAutocomplete({
+    value, onChange,
+    inputRef: internalRef as React.RefObject<HTMLTextAreaElement | HTMLInputElement | null>,
+    imageOnly,
+  });
+
   return (
-    <div className="relative inline-block">
+    <div className="relative">
+      <textarea
+        ref={internalRef}
+        value={value}
+        onChange={ac.handleChange as React.ChangeEventHandler<HTMLTextAreaElement>}
+        onClick={ac.handleClick as React.MouseEventHandler<HTMLTextAreaElement>}
+        onKeyDown={ac.handleKeyDown}
+        placeholder={placeholder}
+        className={className}
+        rows={rows}
+      />
+      {ac.suggestions.length > 0 && (
+        <div className="absolute left-0 z-50 mt-1 w-72 bg-[#1a1b1e] border border-white/10 rounded-lg shadow-2xl overflow-hidden"
+          style={{ top: "100%" }}>
+          {ac.suggestions.map((s, i) => (
+            <button
+              key={s.tag}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); ac.insertSuggestion(s); }}
+              onMouseEnter={() => ac.setSelectedIdx(i)}
+              className={cn(
+                "w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 transition-colors",
+                i === ac.selectedIdx ? "bg-crimson/20 text-bone" : "text-bone/60 hover:bg-white/5",
+              )}
+            >
+              <code className="text-crimson font-mono">{s.tag}</code>
+              <span className="text-bone/40 text-[10px] truncate">{s.desc}</span>
+            </button>
+          ))}
+          <div className="px-3 py-1 border-t border-white/5 text-[10px] text-bone/25">
+            ↑↓ navegar • Enter inserir • Esc fechar
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Wrapper de input com autocomplete de variáveis (para campos de URL com imageOnly)
+function VarInput({
+  value, onChange, placeholder, className, imageOnly,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+  imageOnly?: boolean;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const ac = useVarAutocomplete({ value, onChange, inputRef: ref as React.RefObject<HTMLTextAreaElement | HTMLInputElement | null>, imageOnly });
+
+  return (
+    <div className="relative flex-1">
+      <input
+        ref={ref}
+        value={value}
+        onChange={ac.handleChange as React.ChangeEventHandler<HTMLInputElement>}
+        onClick={ac.handleClick as React.MouseEventHandler<HTMLInputElement>}
+        onKeyDown={ac.handleKeyDown}
+        placeholder={placeholder}
+        className={cn(className, "w-full")}
+      />
+      {ac.suggestions.length > 0 && (
+        <div className="absolute left-0 z-50 mt-1 w-72 bg-[#1a1b1e] border border-white/10 rounded-lg shadow-2xl overflow-hidden"
+          style={{ top: "100%" }}>
+          {ac.suggestions.map((s, i) => (
+            <button
+              key={s.tag}
+              type="button"
+              onMouseDown={e => { e.preventDefault(); ac.insertSuggestion(s); }}
+              onMouseEnter={() => ac.setSelectedIdx(i)}
+              className={cn(
+                "w-full text-left px-3 py-2 text-xs flex items-center justify-between gap-2 transition-colors",
+                i === ac.selectedIdx ? "bg-crimson/20 text-bone" : "text-bone/60 hover:bg-white/5",
+              )}
+            >
+              <code className="text-crimson font-mono">{s.tag}</code>
+              <span className="text-bone/40 text-[10px] truncate">{s.desc}</span>
+            </button>
+          ))}
+          <div className="px-3 py-1 border-t border-white/5 text-[10px] text-bone/25">
+            ↑↓ navegar • Enter inserir • Esc fechar
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tags Helper Popup (hover-based) ─────────────────────────────────────────
+function TagsPopup({ onInsert, imageOnly = false }: { onInsert: (tag: string) => void; imageOnly?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tags = imageOnly ? ALL_VARS.filter(v => v.group === "image") : ALL_VARS;
+
+  const handleMouseEnter = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setOpen(true);
+  };
+  const handleMouseLeave = () => {
+    timeoutRef.current = setTimeout(() => setOpen(false), 120);
+  };
+
+  return (
+    <div className="relative inline-block" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
         className="flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-crimson/10 border border-crimson/20 text-crimson hover:bg-crimson/20 transition-colors"
       >
-        <Info className="w-3 h-3" /> Tags disponíveis
+        <Info className="w-3 h-3" /> {imageOnly ? "Variáveis de imagem" : "Variáveis ${}"}
       </button>
       {open && (
-        <div className="absolute top-7 left-0 z-50 w-72 bg-[#1E1F22] border border-white/10 rounded-lg shadow-2xl p-3 space-y-2">
-          {TAGS.map(t => (
+        <div className="absolute top-7 left-0 z-50 w-80 bg-[#1E1F22] border border-white/10 rounded-lg shadow-2xl p-3 space-y-2">
+          <p className="text-[10px] text-bone/40 uppercase tracking-wider mb-1">
+            {imageOnly ? "Variáveis de imagem disponíveis" : "Variáveis disponíveis — clique para inserir"}
+          </p>
+          {tags.map(t => (
             <div key={t.tag} className="flex items-start justify-between gap-2">
               <div>
                 <code className="text-crimson text-xs font-mono">{t.tag}</code>
@@ -332,29 +628,41 @@ function TagsPopup({ onInsert }: { onInsert: (tag: string) => void }) {
   );
 }
 
-// ─── Discord Formatting Reference Popup ──────────────────────────────────────
+// ─── Discord Formatting Reference Popup (hover-based) ────────────────────────
 function FormattingRef() {
   const [open, setOpen] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const items = [
-    { syntax: "# texto", result: "título H1 (grande)" },
-    { syntax: "## texto", result: "título H2 (médio)" },
-    { syntax: "### texto", result: "título H3 (pequeno)" },
-    { syntax: "**texto**", result: "negrito" },
-    { syntax: "*texto*", result: "itálico" },
-    { syntax: "***texto***", result: "negrito itálico" },
-    { syntax: "__texto__", result: "sublinhado" },
-    { syntax: "~~texto~~", result: "tachado" },
-    { syntax: "`texto`", result: "código inline" },
+    { syntax: "# texto",       result: "título H1 (grande)" },
+    { syntax: "## texto",      result: "título H2 (médio)" },
+    { syntax: "### texto",     result: "título H3 (pequeno)" },
+    { syntax: "-# texto",      result: "texto pequeno / subtext" },
+    { syntax: "**texto**",     result: "negrito" },
+    { syntax: "*texto*",       result: "itálico" },
+    { syntax: "***texto***",   result: "negrito itálico" },
+    { syntax: "__texto__",     result: "sublinhado" },
+    { syntax: "~~texto~~",     result: "tachado" },
+    { syntax: "`texto`",       result: "código inline" },
     { syntax: "```\ntexto\n```", result: "bloco de código" },
-    { syntax: "||texto||", result: "spoiler" },
-    { syntax: "> texto", result: "citação" },
-    { syntax: ">>> texto", result: "citação múltipla" },
+    { syntax: "||texto||",     result: "spoiler (oculto)" },
+    { syntax: "> texto",       result: "citação simples" },
+    { syntax: ">>> texto",     result: "citação múltipla" },
+    { syntax: "\\n",           result: "quebra compacta após H1 (sem gap duplo)" },
+    { syntax: "${DIVISORIA}",  result: "linha divisória responsiva" },
   ];
+
+  const handleMouseEnter = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setOpen(true);
+  };
+  const handleMouseLeave = () => {
+    timeoutRef.current = setTimeout(() => setOpen(false), 120);
+  };
+
   return (
-    <div className="relative inline-block">
+    <div className="relative inline-block" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
       <button
         type="button"
-        onClick={() => setOpen(!open)}
         className="flex items-center gap-1 px-2 py-0.5 text-xs rounded bg-white/5 border border-white/10 text-bone/50 hover:text-bone transition-colors"
       >
         <Info className="w-3 h-3" /> Formatação Discord
@@ -365,8 +673,8 @@ function FormattingRef() {
           <div className="space-y-1.5 max-h-64 overflow-y-auto">
             {items.map(it => (
               <div key={it.syntax} className="flex items-center justify-between text-xs">
-                <code className="font-mono text-bone/40 text-[11px]">{it.syntax}</code>
-                <span className="text-bone/70">→ {it.result}</span>
+                <code className="font-mono text-bone/40 text-[11px] whitespace-pre">{it.syntax}</code>
+                <span className="text-bone/70 text-right ml-2">→ {it.result}</span>
               </div>
             ))}
           </div>
@@ -376,17 +684,26 @@ function FormattingRef() {
   );
 }
 
-// ─── Label + optional tip ─────────────────────────────────────────────────────
+// ─── Label + optional tip (hover-based) ───────────────────────────────────────
 function Field({ label, tip, children }: { label: string; tip?: string; children: React.ReactNode }) {
   const [show, setShow] = useState(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleEnter = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setShow(true);
+  };
+  const handleLeave = () => {
+    timeoutRef.current = setTimeout(() => setShow(false), 120);
+  };
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
         <label className="text-xs font-medium text-bone/60 uppercase tracking-wider">{label}</label>
         {tip && (
-          <div className="relative">
-            <button type="button" onClick={() => setShow(!show)}
-              className="text-bone/30 hover:text-crimson transition-colors">
+          <div className="relative" onMouseEnter={handleEnter} onMouseLeave={handleLeave}>
+            <button type="button" className="text-bone/30 hover:text-crimson transition-colors">
               <Info className="w-3 h-3" />
             </button>
             {show && (
@@ -398,6 +715,89 @@ function Field({ label, tip, children }: { label: string; tip?: string; children
         )}
       </div>
       {children}
+    </div>
+  );
+}
+
+// ─── Drag-and-drop hook for list reordering ──────────────────────────────────
+function useDragReorder<T extends { id: string }>(
+  items: T[],
+  onReorder: (items: T[]) => void,
+) {
+  const dragIdx = useRef<number | null>(null);
+  const overIdx = useRef<number | null>(null);
+
+  const onDragStart = (idx: number) => (e: React.DragEvent) => {
+    dragIdx.current = idx;
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const onDragOver = (idx: number) => (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    overIdx.current = idx;
+  };
+
+  const onDrop = () => {
+    if (dragIdx.current === null || overIdx.current === null || dragIdx.current === overIdx.current) return;
+    const next = [...items];
+    const [moved] = next.splice(dragIdx.current, 1);
+    next.splice(overIdx.current, 0, moved);
+    onReorder(next);
+    dragIdx.current = null;
+    overIdx.current = null;
+  };
+
+  const onDragEnd = () => {
+    dragIdx.current = null;
+    overIdx.current = null;
+  };
+
+  return { onDragStart, onDragOver, onDrop, onDragEnd };
+}
+
+// ─── Toast System ─────────────────────────────────────────────────────────────
+interface Toast { id: string; type: "success" | "error" | "warning" | "info"; msg: string; }
+let _toastSetter: ((fn: (prev: Toast[]) => Toast[]) => void) | null = null;
+
+function toast(type: Toast["type"], msg: string, duration = 4000) {
+  if (!_toastSetter) return;
+  const id = Math.random().toString(36).slice(2);
+  _toastSetter(prev => [...prev, { id, type, msg }]);
+  setTimeout(() => {
+    _toastSetter?.(prev => prev.filter(t => t.id !== id));
+  }, duration);
+}
+
+const TOAST_STYLES: Record<Toast["type"], string> = {
+  success: "bg-emerald-500/15 border-emerald-500/30 text-emerald-300",
+  error:   "bg-red-500/15 border-red-500/30 text-red-300",
+  warning: "bg-amber-500/15 border-amber-500/30 text-amber-300",
+  info:    "bg-blue-500/15 border-blue-500/30 text-blue-300",
+};
+const TOAST_ICONS: Record<Toast["type"], string> = {
+  success: "✓", error: "✕", warning: "⚠", info: "ℹ",
+};
+
+function ToastContainer() {
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  useEffect(() => { _toastSetter = setToasts; return () => { _toastSetter = null; }; }, []);
+
+  if (toasts.length === 0) return null;
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 items-center pointer-events-none">
+      {toasts.map(t => (
+        <div key={t.id}
+          className={cn(
+            "flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-sm font-medium shadow-2xl pointer-events-auto",
+            "animate-in fade-in slide-in-from-bottom-3 duration-200",
+            TOAST_STYLES[t.type],
+          )}
+        >
+          <span className="text-base">{TOAST_ICONS[t.type]}</span>
+          <span>{t.msg}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -599,15 +999,16 @@ const DEFAULT_EMBED: EmbedState = {
   footerText: "", footerIcon: "", timestamp: false,
 };
 
-function TabEmbedBuilder({ channels, guilds }: { channels: Channel[]; guilds: Guild[]; }) {
+function TabEmbedBuilder({ channels, guilds, roles }: { channels: Channel[]; guilds: Guild[]; roles: Role[]; }) {
   const [embed, setEmbed] = useState<EmbedState>(DEFAULT_EMBED);
   const [channelId, setChannelId] = useState("");
   const [webhookName, setWebhookName] = useState("Itadori Bot");
   const [webhookAvatar, setWebhookAvatar] = useState("");
   const [sending, setSending] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [extraImages, setExtraImages] = useState<string[]>(["", "", "", "", ""]);
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
+  const descRef = useRef<HTMLTextAreaElement>(null);
   const selectedGuild = guilds[0];
 
   const set = (k: keyof EmbedState, v: unknown) =>
@@ -628,6 +1029,13 @@ function TabEmbedBuilder({ channels, guilds }: { channels: Channel[]; guilds: Gu
   const removeField = (id: string) =>
     setEmbed(prev => ({ ...prev, fields: prev.fields.filter(f => f.id !== id) }));
 
+  const reorderFields = (newFields: EmbedField[]) =>
+    setEmbed(prev => ({ ...prev, fields: newFields }));
+
+  const fieldsDrag = useDragReorder(embed.fields, reorderFields);
+
+  const [cargoRoleId, setCargoRoleId] = useState("");
+
   const insertTag = (tag: string) =>
     setEmbed(prev => ({ ...prev, description: prev.description + tag }));
 
@@ -643,9 +1051,26 @@ function TabEmbedBuilder({ channels, guilds }: { channels: Channel[]; guilds: Gu
     setUploading(false);
   };
 
+  const uploadExtraImage = async (idx: number, file: File) => {
+    setUploadingIdx(idx);
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await adminFetch(`${BOT_API}/api/upload`, { method: "POST", body: fd });
+      const d = await r.json();
+      if (d.url) {
+        setExtraImages(prev => { const next = [...prev]; next[idx] = d.url; return next; });
+      }
+    } catch { /* ignore */ }
+    setUploadingIdx(null);
+  };
+
+  const setExtraImg = (idx: number, val: string) =>
+    setExtraImages(prev => { const next = [...prev]; next[idx] = val; return next; });
+
   const send = async () => {
-    if (!channelId) { setResult({ ok: false, msg: "Selecione um canal." }); return; }
-    setSending(true); setResult(null);
+    if (!channelId) { toast("error", "Selecione um canal primeiro."); return; }
+    setSending(true);
     try {
       const r = await adminFetch(`${BOT_API}/api/send-embed`, {
         method: "POST",
@@ -660,15 +1085,18 @@ function TabEmbedBuilder({ channels, guilds }: { channels: Channel[]; guilds: Gu
           footer: embed.footerText || (embed.timestamp ? "" : null),
           username: webhookName,
           avatar: webhookAvatar || null,
+          extraImages: extraImages.filter(Boolean),
+          cargoRoleId: cargoRoleId || null,
           fields: embed.fields
             .filter(f => f.name || f.value)
             .map(f => ({ name: f.name, value: f.value, inline: f.inline, separate: f.separate })),
         }),
       });
       const d = await r.json();
-      setResult(d.success ? { ok: true, msg: "Embed enviado com sucesso!" } : { ok: false, msg: d.error || "Erro ao enviar." });
+      if (d.success) toast("success", "Embed enviado com sucesso!");
+      else toast("error", d.error || "Erro ao enviar.");
     } catch {
-      setResult({ ok: false, msg: "Bot offline ou erro de conexão." });
+      toast("error", "Bot offline ou erro de conexão.");
     }
     setSending(false);
   };
@@ -715,15 +1143,37 @@ function TabEmbedBuilder({ channels, guilds }: { channels: Channel[]; guilds: Gu
           </div>
         </section>
 
+        {/* ${CARGO} Role Selector */}
+        {roles.length > 0 && (
+          <section className="bg-white/3 border border-white/8 rounded-xl p-4 space-y-3">
+            <p className="text-xs font-semibold text-bone/50 uppercase tracking-wider">Variável <code className="text-crimson normal-case font-mono">{"${CARGO}"}</code></p>
+            <Field label="Cargo a ser mencionado" tip="O cargo selecionado aqui substitui ${CARGO} no embed. Use ${CARGO} em qualquer campo de texto.">
+              <select value={cargoRoleId} onChange={e => setCargoRoleId(e.target.value)} className={inputCls}>
+                <option value="">— Nenhum (${"{CARGO}"} vazio) —</option>
+                {roles.map(r => (
+                  <option key={r.id} value={r.id} style={{ color: r.color || undefined }}>
+                    @{r.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {cargoRoleId && (
+              <p className="text-[11px] text-bone/40">
+                <code className="text-crimson font-mono">{"${CARGO}"}</code> → <span className="font-semibold" style={{ color: roles.find(r => r.id === cargoRoleId)?.color || undefined }}>@{roles.find(r => r.id === cargoRoleId)?.name}</span>
+              </p>
+            )}
+          </section>
+        )}
+
         {/* Author */}
         <section className="bg-white/3 border border-white/8 rounded-xl p-4 space-y-3">
           <p className="text-xs font-semibold text-bone/50 uppercase tracking-wider">Autor</p>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Nome do Autor">
-              <input value={embed.authorName} onChange={e => set("authorName", e.target.value)} placeholder="Itadori Bot" className={inputCls} />
+              <VarInput value={embed.authorName} onChange={v => set("authorName", v)} placeholder="Itadori Bot" className={inputCls} />
             </Field>
-            <Field label="Ícone do Autor (URL)">
-              <input value={embed.authorIcon} onChange={e => set("authorIcon", e.target.value)} placeholder="https://..." className={inputCls} />
+            <Field label="Ícone do Autor (URL)" tip="URL da imagem. Use ${USER.PERFIL} para avatar do usuário.">
+              <VarInput value={embed.authorIcon} onChange={v => set("authorIcon", v)} placeholder="https://... ou ${USER.PERFIL}" className={inputCls} imageOnly />
             </Field>
           </div>
           <Field label="URL do Autor (clicável)">
@@ -735,22 +1185,27 @@ function TabEmbedBuilder({ channels, guilds }: { channels: Channel[]; guilds: Gu
         <section className="bg-white/3 border border-white/8 rounded-xl p-4 space-y-3">
           <p className="text-xs font-semibold text-bone/50 uppercase tracking-wider">Conteúdo</p>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Título">
-              <input value={embed.title} onChange={e => set("title", e.target.value)} placeholder="Título do embed" className={inputCls} />
+            <Field label="Título" tip="Use ${USER}, ${SERVER} etc. Digite ${ para autocomplete.">
+              <VarInput value={embed.title} onChange={v => set("title", v)} placeholder="Título do embed" className={inputCls} />
             </Field>
             <Field label="URL do Título">
               <input value={embed.titleUrl} onChange={e => set("titleUrl", e.target.value)} placeholder="https://..." className={inputCls} />
             </Field>
           </div>
-          <Field label="Descrição" tip="Suporta formatação Markdown do Discord. Use as tags para mencionar usuários ou servidor.">
-            <MdToolbar target={embed.description} onChange={v => set("description", v)} />
+          <Field label="Descrição" tip="Suporta formatação Markdown do Discord. Digite ${ para autocomplete de variáveis dinâmicas.">
+            <MdToolbar target={embed.description} onChange={v => set("description", v)} textareaRef={descRef} />
             <div className="flex gap-2 mb-1.5">
               <TagsPopup onInsert={insertTag} />
               <FormattingRef />
             </div>
-            <textarea value={embed.description} onChange={e => set("description", e.target.value)}
-              placeholder="Descrição com **negrito**, *itálico*, @USER, #Server, #Horario..."
-              className={textareaCls} rows={4} />
+            <VarTextarea
+              textareaRef={descRef}
+              value={embed.description}
+              onChange={v => set("description", v)}
+              placeholder="Descrição com **negrito**, *itálico*, ${USER}, ${SERVER}, ${HORARIO}..."
+              className={textareaCls}
+              rows={4}
+            />
           </Field>
         </section>
 
@@ -763,18 +1218,38 @@ function TabEmbedBuilder({ channels, guilds }: { channels: Channel[]; guilds: Gu
               <Plus className="w-3 h-3" /> Adicionar Field
             </button>
           </div>
-          {embed.fields.map((f) => (
-            <div key={f.id} className="bg-black/20 rounded-lg p-3 space-y-2">
+          {embed.fields.map((f, idx) => (
+            <div key={f.id}
+              draggable
+              onDragStart={fieldsDrag.onDragStart(idx)}
+              onDragOver={fieldsDrag.onDragOver(idx)}
+              onDrop={fieldsDrag.onDrop}
+              onDragEnd={fieldsDrag.onDragEnd}
+              className="bg-black/20 rounded-lg p-3 space-y-2 cursor-grab active:cursor-grabbing active:opacity-60 transition-opacity">
               <div className="flex gap-2">
-                <input value={f.name} onChange={e => updateField(f.id, "name", e.target.value)}
+                <span className="text-bone/20 flex-shrink-0 mt-2 cursor-grab" title="Arraste para reordenar">
+                  <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
+                    <circle cx="4" cy="3" r="1.5"/><circle cx="8" cy="3" r="1.5"/>
+                    <circle cx="4" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/>
+                    <circle cx="4" cy="13" r="1.5"/><circle cx="8" cy="13" r="1.5"/>
+                  </svg>
+                </span>
+                <VarInput value={f.name} onChange={v => updateField(f.id, "name", v)}
                   placeholder="Nome do field" className={cn(inputCls, "flex-1")} />
                 <button type="button" onClick={() => removeField(f.id)}
                   className="text-bone/30 hover:text-red-400 transition-colors">
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
-              <textarea value={f.value} onChange={e => updateField(f.id, "value", e.target.value)}
-                placeholder="Valor do field (suporta markdown)" className={cn(textareaCls, "min-h-[50px]")} rows={2} />
+              <div className="text-[10px] text-amber-400/50 text-right">
+                {f.value.length}/1024
+                {f.value.length > 1024 && <span className="text-red-400 ml-1">⚠ limite excedido</span>}
+              </div>
+              <VarTextarea value={f.value} onChange={v => {
+                  updateField(f.id, "value", v);
+                  if (v.length > 1024) toast("warning", `Field "${f.name || "sem nome"}" excede 1024 caracteres.`);
+                }}
+                placeholder="Valor do field (suporta markdown, ${} variáveis)" className={cn(textareaCls, "min-h-[50px]", f.value.length > 1024 && "border-red-500/50")} rows={2} />
               <div className="flex items-center gap-4">
                 <label className="flex items-center gap-2 text-xs text-bone/50 cursor-pointer">
                   <input type="checkbox" checked={!!f.inline} onChange={e => updateField(f.id, "inline", e.target.checked)}
@@ -796,36 +1271,142 @@ function TabEmbedBuilder({ channels, guilds }: { channels: Channel[]; guilds: Gu
         {/* Images */}
         <section className="bg-white/3 border border-white/8 rounded-xl p-4 space-y-3">
           <p className="text-xs font-semibold text-bone/50 uppercase tracking-wider">Imagens</p>
-          <Field label="Imagem Principal" tip="Aparece grande no final do embed.">
-            <div className="flex gap-2">
-              <input value={embed.image} onChange={e => set("image", e.target.value)}
-                placeholder="https://... ou faça upload" className={cn(inputCls, "flex-1")} />
-              <button type="button" onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                className="flex items-center gap-1.5 px-3 text-xs rounded-lg bg-crimson/10 border border-crimson/20 text-crimson hover:bg-crimson/20 transition-colors whitespace-nowrap">
-                <Upload className="w-3.5 h-3.5" />{uploading ? "..." : "Upload"}
-              </button>
-              <input ref={fileRef} type="file" accept="image/*" className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
+          <Field label="Imagem Principal" tip="Aparece grande no final do embed. Use ${IMG1}..${IMG5} ou ${USER.PERFIL}.">
+            <div className="flex gap-2 items-center">
+              <VarInput
+                value={embed.image}
+                onChange={v => set("image", v)}
+                placeholder="https://... ou ${USER.PERFIL} ou ${IMG1}"
+                className={inputCls}
+                imageOnly
+              />
+              <label
+                title="Upload de imagem"
+                className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg bg-crimson/10 border border-crimson/20 text-crimson hover:bg-crimson/20 transition-colors cursor-pointer"
+              >
+                <Upload className="w-4 h-4" />
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
+              </label>
+              {uploading && <span className="text-xs text-bone/40">enviando...</span>}
             </div>
           </Field>
-          <Field label="Thumbnail" tip="Imagem pequena no canto superior direito do embed.">
-            <input value={embed.thumbnail} onChange={e => set("thumbnail", e.target.value)}
-              placeholder="https://..." className={inputCls} />
+          <Field label="Thumbnail" tip="Imagem pequena no canto superior direito. Use ${USER.PERFIL} para avatar.">
+            <div className="flex gap-2 items-center">
+              <VarInput
+                value={embed.thumbnail}
+                onChange={v => set("thumbnail", v)}
+                placeholder="https://... ou ${USER.PERFIL}"
+                className={inputCls}
+                imageOnly
+              />
+              <label
+                title="Upload de thumbnail"
+                className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg bg-white/5 border border-white/10 text-bone/40 hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <Upload className="w-4 h-4" />
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={async e => {
+                    const f = e.target.files?.[0]; if (!f) return;
+                    setUploading(true);
+                    const fd = new FormData(); fd.append("file", f);
+                    try {
+                      const r = await adminFetch(`${BOT_API}/api/upload`, { method: "POST", body: fd });
+                      const d = await r.json();
+                      if (d.url) set("thumbnail", d.url);
+                    } catch { /* ignore */ }
+                    setUploading(false);
+                  }} />
+              </label>
+            </div>
           </Field>
+        </section>
+
+        {/* Extra Image Container */}
+        <section className="bg-white/3 border border-white/8 rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-bone/50 uppercase tracking-wider">Container de Imagens</p>
+            <span className="text-[10px] text-bone/30 bg-white/5 px-2 py-0.5 rounded-full">
+              {extraImages.filter(Boolean).length}/5 preenchidas
+            </span>
+          </div>
+          <p className="text-[11px] text-bone/40 leading-relaxed">
+            Imagens acessíveis via <code className="text-crimson font-mono">{"${IMG1}"}</code>…<code className="text-crimson font-mono">{"${IMG5}"}</code> nos campos de texto e URL acima.
+          </p>
+          <div className="grid grid-cols-1 gap-2">
+            {extraImages.map((url, idx) => (
+              <div key={idx} className="flex gap-2 items-center">
+                <span className="text-[10px] font-mono text-crimson/60 w-10 flex-shrink-0">{`\${IMG${idx + 1}}`}</span>
+                <VarInput
+                  value={url}
+                  onChange={v => setExtraImg(idx, v)}
+                  placeholder={`URL da imagem ${idx + 1}...`}
+                  className={inputCls}
+                  imageOnly={false}
+                />
+                <label
+                  title={`Upload IMG${idx + 1}`}
+                  className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg bg-crimson/10 border border-crimson/20 text-crimson hover:bg-crimson/20 transition-colors cursor-pointer"
+                >
+                  {uploadingIdx === idx ? (
+                    <span className="text-[9px]">...</span>
+                  ) : (
+                    <Upload className="w-4 h-4" />
+                  )}
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadExtraImage(idx, f); }} />
+                </label>
+                {url && (
+                  <button type="button" onClick={() => setExtraImg(idx, "")}
+                    className="flex-shrink-0 text-bone/30 hover:text-red-400 transition-colors">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+          {extraImages.some(Boolean) && (
+            <div className="flex gap-2 flex-wrap">
+              {extraImages.map((url, idx) => url ? (
+                <img key={idx} src={url} alt={`IMG${idx + 1}`}
+                  className="w-16 h-16 rounded object-cover border border-white/10"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = "0.3"; }} />
+              ) : null)}
+            </div>
+          )}
         </section>
 
         {/* Footer */}
         <section className="bg-white/3 border border-white/8 rounded-xl p-4 space-y-3">
           <p className="text-xs font-semibold text-bone/50 uppercase tracking-wider">Footer</p>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Texto do Footer" tip="Use #Horario para mostrar a hora atual.">
-              <input value={embed.footerText} onChange={e => set("footerText", e.target.value)}
-                placeholder="Footer • #Horario" className={inputCls} />
+            <Field label="Texto do Footer" tip="Use ${HORARIO} para hora atual. Suporta variáveis ${}.">
+              <VarInput value={embed.footerText} onChange={v => set("footerText", v)}
+                placeholder="Footer • ${HORARIO}" className={inputCls} />
             </Field>
-            <Field label="Ícone do Footer (URL)">
-              <input value={embed.footerIcon} onChange={e => set("footerIcon", e.target.value)}
-                placeholder="https://..." className={inputCls} />
+            <Field label="Ícone do Footer (URL)" tip="Use ${USER.PERFIL} para avatar do usuário.">
+              <div className="flex gap-2 items-center">
+                <VarInput value={embed.footerIcon} onChange={v => set("footerIcon", v)}
+                  placeholder="https://... ou ${USER.PERFIL}" className={inputCls} imageOnly />
+                <label
+                  title="Upload de ícone"
+                  className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg bg-white/5 border border-white/10 text-bone/40 hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <Upload className="w-4 h-4" />
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={async e => {
+                      const f = e.target.files?.[0]; if (!f) return;
+                      setUploading(true);
+                      const fd = new FormData(); fd.append("file", f);
+                      try {
+                        const r = await adminFetch(`${BOT_API}/api/upload`, { method: "POST", body: fd });
+                        const d = await r.json();
+                        if (d.url) set("footerIcon", d.url);
+                      } catch { /* ignore */ }
+                      setUploading(false);
+                    }} />
+                </label>
+              </div>
             </Field>
           </div>
           <label className="flex items-center gap-2 text-sm text-bone/60 cursor-pointer">
@@ -837,13 +1418,6 @@ function TabEmbedBuilder({ channels, guilds }: { channels: Channel[]; guilds: Gu
 
         {/* Send */}
         <div className="space-y-2 pb-6">
-          {result && (
-            <p className={cn("text-sm px-4 py-2 rounded-lg", result.ok
-              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-              : "bg-red-500/10 text-red-400 border border-red-500/20")}>
-              {result.msg}
-            </p>
-          )}
           <button type="button" onClick={send} disabled={sending}
             className="w-full flex items-center justify-center gap-2 py-3 bg-crimson rounded-xl text-white font-semibold hover:bg-crimson-light transition-colors disabled:opacity-50">
             <Send className="w-4 h-4" />
@@ -861,6 +1435,8 @@ function TabEmbedBuilder({ channels, guilds }: { channels: Channel[]; guilds: Gu
             webhookName={webhookName}
             webhookAvatar={webhookAvatar}
             guildName={selectedGuild?.name}
+            extraImages={extraImages}
+            cargoMention={cargoRoleId ? `@${roles.find(r => r.id === cargoRoleId)?.name || "Cargo"}` : "@Cargo"}
           />
         </div>
       </div>
@@ -2454,6 +3030,251 @@ function TabNoticias({ guilds, channels, roles }: { guilds: Guild[]; channels: C
   );
 }
 
+// ─── Interactive Buttons Tab ──────────────────────────────────────────────────
+interface BtnDef {
+  id: string;
+  label: string;
+  style: "primary" | "success" | "danger" | "secondary";
+  type: "add_role" | "remove_role" | "text_dm" | "text_visible" | "link";
+  roleId?: string;
+  text?: string;
+  url?: string;
+}
+
+const BTN_STYLE_LABELS: Record<BtnDef["style"], string> = {
+  primary: "Azul",
+  success: "Verde",
+  danger: "Vermelho",
+  secondary: "Cinza",
+};
+const BTN_STYLE_COLORS: Record<BtnDef["style"], string> = {
+  primary: "#5865F2",
+  success: "#57F287",
+  danger: "#ED4245",
+  secondary: "#4F545C",
+};
+const BTN_TYPE_LABELS: Record<BtnDef["type"], string> = {
+  add_role: "Adicionar Cargo",
+  remove_role: "Remover Cargo",
+  text_dm: "Texto no DM",
+  text_visible: "Texto Visível",
+  link: "Link Externo",
+};
+
+function TabButtons({ channels, guilds, roles }: { channels: Channel[]; guilds: Guild[]; roles: Role[] }) {
+  const [channelId, setChannelId] = useState("");
+  const [content, setContent] = useState("");
+  const [buttons, setButtons] = useState<BtnDef[]>([]);
+  const [sending, setSending] = useState(false);
+
+  const addBtn = () => {
+    if (buttons.length >= 5) { toast("warning", "Máximo de 5 botões por mensagem."); return; }
+    setButtons(prev => [...prev, {
+      id: Date.now().toString(),
+      label: "Clique aqui",
+      style: "primary",
+      type: "text_visible",
+      text: "",
+    }]);
+  };
+
+  const updateBtn = (id: string, patch: Partial<BtnDef>) =>
+    setButtons(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
+
+  const removeBtn = (id: string) =>
+    setButtons(prev => prev.filter(b => b.id !== id));
+
+  const btnsDrag = useDragReorder(buttons, setButtons);
+
+  const send = async () => {
+    if (!channelId) { toast("error", "Selecione um canal."); return; }
+    if (buttons.length === 0) { toast("error", "Adicione pelo menos um botão."); return; }
+    setSending(true);
+    try {
+      const r = await adminFetch(`${BOT_API}/api/send-buttons`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId, content: content || null, buttons, guildId: guilds[0]?.id }),
+      });
+      const d = await r.json();
+      if (d.success) toast("success", "Painel de botões enviado!");
+      else toast("error", d.error || "Erro ao enviar.");
+    } catch {
+      toast("error", "Bot offline ou erro de conexão.");
+    }
+    setSending(false);
+  };
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-4 text-sm text-purple-300 space-y-1">
+        <p className="font-semibold">Painel de Botões Interativos</p>
+        <p className="text-xs text-purple-400/70">
+          Envie uma mensagem com até 5 botões. Cada botão pode adicionar/remover um cargo, enviar texto no DM ou visível, ou abrir um link.
+        </p>
+      </div>
+
+      <Field label="Canal de destino" tip="Canal onde a mensagem com botões será enviada.">
+        <select value={channelId} onChange={e => setChannelId(e.target.value)} className={inputCls}>
+          <option value="">— Selecione um canal —</option>
+          {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </Field>
+
+      <Field label="Mensagem acima dos botões (opcional)" tip="Texto que aparece antes dos botões. Suporta markdown do Discord.">
+        <textarea
+          value={content}
+          onChange={e => setContent(e.target.value)}
+          placeholder="Reaja clicando em um botão abaixo 👇"
+          className={textareaCls}
+          rows={2}
+          maxLength={2000}
+        />
+        <p className="text-xs text-bone/30 text-right">{content.length}/2000</p>
+      </Field>
+
+      {/* Buttons builder */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-bone/50 uppercase tracking-wider">Botões ({buttons.length}/5)</p>
+          <button type="button" onClick={addBtn}
+            className="flex items-center gap-1.5 text-xs px-3 py-1 rounded-full bg-crimson/10 border border-crimson/20 text-crimson hover:bg-crimson/20 transition-colors">
+            <Plus className="w-3 h-3" /> Adicionar Botão
+          </button>
+        </div>
+
+        {buttons.length === 0 && (
+          <p className="text-center text-bone/25 text-xs py-4 bg-white/3 border border-white/8 rounded-xl">
+            Nenhum botão adicionado. Clique em "Adicionar Botão".
+          </p>
+        )}
+
+        {buttons.map((btn, idx) => (
+          <div key={btn.id}
+            draggable
+            onDragStart={btnsDrag.onDragStart(idx)}
+            onDragOver={btnsDrag.onDragOver(idx)}
+            onDrop={btnsDrag.onDrop}
+            onDragEnd={btnsDrag.onDragEnd}
+            className="bg-black/20 border border-white/8 rounded-xl p-4 space-y-3 cursor-grab active:cursor-grabbing active:opacity-60 transition-opacity">
+            <div className="flex items-center gap-2">
+              <span className="text-bone/20 cursor-grab">
+                <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
+                  <circle cx="4" cy="3" r="1.5"/><circle cx="8" cy="3" r="1.5"/>
+                  <circle cx="4" cy="8" r="1.5"/><circle cx="8" cy="8" r="1.5"/>
+                  <circle cx="4" cy="13" r="1.5"/><circle cx="8" cy="13" r="1.5"/>
+                </svg>
+              </span>
+              <input
+                value={btn.label}
+                onChange={e => updateBtn(btn.id, { label: e.target.value })}
+                placeholder="Rótulo do botão"
+                className={cn(inputCls, "flex-1")}
+                maxLength={80}
+              />
+              <button type="button" onClick={() => removeBtn(btn.id)}
+                className="text-bone/30 hover:text-red-400 transition-colors flex-shrink-0">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] text-bone/40 uppercase tracking-wider block mb-1">Cor</label>
+                <div className="flex gap-1.5">
+                  {(Object.keys(BTN_STYLE_LABELS) as BtnDef["style"][]).map(s => (
+                    <button key={s} type="button"
+                      onClick={() => updateBtn(btn.id, { style: s })}
+                      title={BTN_STYLE_LABELS[s]}
+                      className={cn(
+                        "w-6 h-6 rounded border-2 transition-all",
+                        btn.style === s ? "border-white scale-110" : "border-white/10 hover:scale-105",
+                      )}
+                      style={{ background: BTN_STYLE_COLORS[s] }}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] text-bone/40 uppercase tracking-wider block mb-1">Ação</label>
+                <select value={btn.type} onChange={e => updateBtn(btn.id, { type: e.target.value as BtnDef["type"] })}
+                  className={cn(inputCls, "text-xs py-1.5")}>
+                  {(Object.entries(BTN_TYPE_LABELS) as [BtnDef["type"], string][]).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {(btn.type === "add_role" || btn.type === "remove_role") && (
+              <div>
+                <label className="text-[10px] text-bone/40 uppercase tracking-wider block mb-1">Cargo</label>
+                <select value={btn.roleId || ""} onChange={e => updateBtn(btn.id, { roleId: e.target.value })}
+                  className={cn(inputCls, "text-xs py-1.5")}>
+                  <option value="">— Selecione um cargo —</option>
+                  {roles.map(r => <option key={r.id} value={r.id} style={{ color: r.color || undefined }}>@{r.name}</option>)}
+                </select>
+              </div>
+            )}
+
+            {(btn.type === "text_dm" || btn.type === "text_visible") && (
+              <div>
+                <label className="text-[10px] text-bone/40 uppercase tracking-wider block mb-1">
+                  {btn.type === "text_dm" ? "Texto enviado no DM" : "Texto visível no canal"}
+                </label>
+                <textarea
+                  value={btn.text || ""}
+                  onChange={e => updateBtn(btn.id, { text: e.target.value })}
+                  placeholder="Mensagem que será enviada..."
+                  className={cn(textareaCls, "min-h-[60px]")}
+                  rows={2}
+                  maxLength={2000}
+                />
+              </div>
+            )}
+
+            {btn.type === "link" && (
+              <div>
+                <label className="text-[10px] text-bone/40 uppercase tracking-wider block mb-1">URL</label>
+                <input
+                  value={btn.url || ""}
+                  onChange={e => updateBtn(btn.id, { url: e.target.value })}
+                  placeholder="https://..."
+                  className={inputCls}
+                />
+              </div>
+            )}
+          </div>
+        ))}
+
+        {/* Preview of buttons */}
+        {buttons.length > 0 && (
+          <div className="bg-[#2B2D31] rounded-xl p-4 space-y-3">
+            <p className="text-[10px] text-bone/30 uppercase tracking-wider mb-2">Preview</p>
+            {content && <p className="text-bone/80 text-sm mb-2" dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />}
+            <div className="flex flex-wrap gap-2">
+              {buttons.map(btn => (
+                <button key={btn.id} type="button"
+                  className="px-4 py-2 rounded text-white text-sm font-medium transition-opacity hover:opacity-80"
+                  style={{ background: btn.type === "link" ? "#4F545C" : BTN_STYLE_COLORS[btn.style] }}>
+                  {btn.label || "Botão"}
+                  {btn.type === "link" && " ↗"}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <button type="button" onClick={send} disabled={sending}
+        className="w-full flex items-center justify-center gap-2 py-3 bg-crimson rounded-xl text-white font-semibold hover:bg-crimson-light transition-colors disabled:opacity-50">
+        <Send className="w-4 h-4" />
+        {sending ? "Enviando..." : "Enviar Painel de Botões"}
+      </button>
+    </div>
+  );
+}
+
 // ─── Admin Page Shell ─────────────────────────────────────────────────────────
 // ─── Aba Servidores ───────────────────────────────────────────────────────────
 interface GuildInfo {
@@ -2907,6 +3728,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     label: "Ferramentas",
     items: [
       { id: "embed",      label: "Embed Builder",   icon: <Send className="w-4 h-4" /> },
+      { id: "buttons",    label: "Botões",           icon: <Zap className="w-4 h-4" /> },
       { id: "customcmds", label: "Comandos Pers.",  icon: <Terminal className="w-4 h-4" /> },
       { id: "commands",   label: "Comandos",         icon: <Hash className="w-4 h-4" /> },
     ],
@@ -3608,7 +4430,8 @@ export default function AdminPage() {
         {/* Tab content */}
         <div className="flex-1 overflow-y-auto px-4 lg:px-8 py-6">
           {tab === "overview"   && <TabOverview stats={botStats} />}
-          {tab === "embed"      && <TabEmbedBuilder channels={channels} guilds={guildArr} />}
+          {tab === "embed"      && <TabEmbedBuilder channels={channels} guilds={guildArr} roles={roles} />}
+          {tab === "buttons"    && <TabButtons channels={channels} guilds={guildArr} roles={roles} />}
           {tab === "eventos"    && <TabEventos channels={channels} guilds={guildArr} roles={roles} />}
           {tab === "noticias"   && <TabNoticias channels={channels} guilds={guildArr} roles={roles} />}
           {tab === "welcome"    && <TabWelcome channels={channels} guilds={guildArr} />}
@@ -3625,6 +4448,9 @@ export default function AdminPage() {
 
       {/* Chatbot Widget */}
       <ChatBotWidget />
+
+      {/* Toast Notifications */}
+      <ToastContainer />
     </div>
   );
 }
