@@ -8,7 +8,7 @@ import {
   ToggleLeft, ToggleRight, Copy, Eye, EyeOff, ArrowLeft,
   Bell, Shield, UserPlus, Bot, Activity, Clock, Terminal,
   Radio, Newspaper, TrendingUp, Gamepad2, Calendar, Search,
-  LogOut, Lock, User as UserIcon,
+  LogOut, Lock, User as UserIcon, Smile, BookOpen, Image as ImageIcon,
 } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 import InteractiveGrid from "@/components/InteractiveGrid";
@@ -3275,6 +3275,227 @@ function TabButtons({ channels, guilds, roles }: { channels: Channel[]; guilds: 
   );
 }
 
+// ─── Reaction Roles Tab ───────────────────────────────────────────────────────
+interface ReactionRoleDef {
+  id: string;
+  emoji: string;
+  roleId: string;
+  action: "add_role" | "remove_role" | "text_dm" | "text_visible";
+  text?: string;
+  textMode?: "dm" | "visible";
+}
+
+const REACTION_ACTION_LABELS: Record<ReactionRoleDef["action"], string> = {
+  add_role:     "Adicionar Cargo",
+  remove_role:  "Remover Cargo",
+  text_dm:      "Texto no DM",
+  text_visible: "Texto Visível",
+};
+
+function TabReactions({ channels, guilds, roles }: { channels: Channel[]; guilds: Guild[]; roles: Role[] }) {
+  const [channelId, setChannelId] = useState("");
+  const [messageContent, setMessageContent] = useState("");
+  const [reactions, setReactions] = useState<ReactionRoleDef[]>([]);
+  const [sending, setSending] = useState(false);
+
+  const addReaction = () => {
+    if (reactions.length >= 20) { toast("warning", "Máximo de 20 reações por mensagem."); return; }
+    setReactions(prev => [...prev, {
+      id: Date.now().toString(),
+      emoji: "👍",
+      roleId: "",
+      action: "add_role",
+      text: "",
+      textMode: "dm",
+    }]);
+  };
+
+  const updateReaction = (id: string, patch: Partial<ReactionRoleDef>) =>
+    setReactions(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r));
+
+  const removeReaction = (id: string) =>
+    setReactions(prev => prev.filter(r => r.id !== id));
+
+  const send = async () => {
+    if (!channelId) { toast("error", "Selecione um canal."); return; }
+    if (reactions.length === 0) { toast("error", "Adicione pelo menos uma reação."); return; }
+    const invalid = reactions.find(r => !r.emoji.trim() || ((r.action === "add_role" || r.action === "remove_role") && !r.roleId));
+    if (invalid) { toast("error", "Preencha emoji e cargo em todas as reações."); return; }
+    setSending(true);
+    try {
+      const r = await adminFetch(`${BOT_API}/api/send-reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId, content: messageContent || null, reactions, guildId: guilds[0]?.id }),
+      });
+      const d = await r.json();
+      if (d.success) toast("success", "Painel de reações enviado!");
+      else toast("error", d.error || "Erro ao enviar.");
+    } catch {
+      toast("error", "Bot offline ou erro de conexão.");
+    }
+    setSending(false);
+  };
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-sm text-amber-300 space-y-1">
+        <p className="font-semibold">Painel de Reações</p>
+        <p className="text-xs text-amber-400/70">
+          Envie uma mensagem e o bot adicionará reações automáticas. Ao clicar numa reação, o usuário ganha/perde um cargo ou recebe uma mensagem.
+        </p>
+      </div>
+
+      <Field label="Canal de destino" tip="Canal onde a mensagem com reações será enviada.">
+        <select value={channelId} onChange={e => setChannelId(e.target.value)} className={inputCls}>
+          <option value="">— Selecione um canal —</option>
+          {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </Field>
+
+      <Field label="Mensagem (opcional)" tip="Texto enviado com as reações. Suporta markdown do Discord.">
+        <textarea
+          value={messageContent}
+          onChange={e => setMessageContent(e.target.value)}
+          placeholder="Reaja para escolher um cargo 👇"
+          className={textareaCls}
+          rows={3}
+          maxLength={2000}
+        />
+        <p className="text-xs text-bone/30 text-right">{messageContent.length}/2000</p>
+      </Field>
+
+      {/* Reactions builder */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-bone/50 uppercase tracking-wider">Reações ({reactions.length}/20)</p>
+          <button type="button" onClick={addReaction}
+            className="flex items-center gap-1.5 text-xs px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors">
+            <Plus className="w-3 h-3" /> Adicionar Reação
+          </button>
+        </div>
+
+        {reactions.length === 0 && (
+          <p className="text-center text-bone/25 text-xs py-4 bg-white/3 border border-white/8 rounded-xl">
+            Nenhuma reação adicionada. Clique em "Adicionar Reação".
+          </p>
+        )}
+
+        {reactions.map((reaction) => (
+          <div key={reaction.id} className="bg-black/20 border border-white/8 rounded-xl p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              {/* Emoji input */}
+              <div className="flex-shrink-0">
+                <label className="text-[10px] text-bone/40 uppercase tracking-wider block mb-1">Emoji</label>
+                <input
+                  value={reaction.emoji}
+                  onChange={e => updateReaction(reaction.id, { emoji: e.target.value })}
+                  placeholder="👍"
+                  className={cn(inputCls, "w-20 text-center text-xl")}
+                  maxLength={8}
+                />
+              </div>
+
+              {/* Action selector */}
+              <div className="flex-1">
+                <label className="text-[10px] text-bone/40 uppercase tracking-wider block mb-1">Ação ao reagir</label>
+                <select
+                  value={reaction.action}
+                  onChange={e => updateReaction(reaction.id, { action: e.target.value as ReactionRoleDef["action"] })}
+                  className={inputCls}
+                >
+                  {(Object.entries(REACTION_ACTION_LABELS) as [ReactionRoleDef["action"], string][]).map(([k, v]) => (
+                    <option key={k} value={k}>{v}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Remove button */}
+              <button type="button" onClick={() => removeReaction(reaction.id)}
+                className="mt-6 text-bone/30 hover:text-red-400 transition-colors flex-shrink-0">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Conditional: role selector */}
+            {(reaction.action === "add_role" || reaction.action === "remove_role") && (
+              <div>
+                <label className="text-[10px] text-bone/40 uppercase tracking-wider block mb-1">Cargo</label>
+                <select
+                  value={reaction.roleId}
+                  onChange={e => updateReaction(reaction.id, { roleId: e.target.value })}
+                  className={inputCls}
+                >
+                  <option value="">— Selecione um cargo —</option>
+                  {roles.map(r => (
+                    <option key={r.id} value={r.id} style={{ color: r.color || undefined }}>
+                      @{r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Conditional: text input for dm/visible */}
+            {(reaction.action === "text_dm" || reaction.action === "text_visible") && (
+              <div className="space-y-2">
+                <label className="text-[10px] text-bone/40 uppercase tracking-wider block">Mensagem a enviar</label>
+                <textarea
+                  value={reaction.text || ""}
+                  onChange={e => updateReaction(reaction.id, { text: e.target.value })}
+                  placeholder={reaction.action === "text_dm" ? "Mensagem enviada no DM do usuário..." : "Mensagem visível no canal..."}
+                  className={cn(textareaCls, "min-h-[60px]")}
+                  rows={2}
+                  maxLength={2000}
+                />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Preview */}
+      {reactions.length > 0 && (
+        <div className="bg-white/3 border border-white/8 rounded-xl p-4 space-y-2">
+          <p className="text-xs font-semibold text-bone/40 uppercase tracking-wider">Preview</p>
+          <div className="bg-[#313338] rounded-lg p-4">
+            <div className="flex gap-3">
+              <div className="w-10 h-10 rounded-full bg-crimson flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-sm font-bold">I</span>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-white font-semibold text-sm">Itadori Bot</span>
+                  <span className="bg-[#5865F2] text-white text-[10px] font-medium px-1.5 py-px rounded">BOT</span>
+                </div>
+                {messageContent && (
+                  <p className="text-[#DBDEE1] text-sm mb-2">{messageContent}</p>
+                )}
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {reactions.map(r => (
+                    <div key={r.id}
+                      className="flex items-center gap-1 bg-[#2B2D31] border border-[#5865F2]/40 rounded-full px-3 py-1 text-sm cursor-pointer hover:bg-[#5865F2]/20 transition-colors">
+                      <span>{r.emoji}</span>
+                      <span className="text-[#DBDEE1] text-xs">1</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Send button */}
+      <button type="button" onClick={send} disabled={sending}
+        className="w-full flex items-center justify-center gap-2 py-3 bg-amber-500 rounded-xl text-black font-semibold hover:bg-amber-400 transition-colors disabled:opacity-50">
+        <Send className="w-4 h-4" />
+        {sending ? "Enviando..." : "Enviar Painel de Reações"}
+      </button>
+    </div>
+  );
+}
+
 // ─── Admin Page Shell ─────────────────────────────────────────────────────────
 // ─── Aba Servidores ───────────────────────────────────────────────────────────
 interface GuildInfo {
@@ -3702,6 +3923,670 @@ function TabCustomCmds({ guilds, roles }: { guilds: Guild[]; roles: Role[] }) {
   );
 }
 
+// ─── Prompt Library Tab ───────────────────────────────────────────────────────
+interface PromptEntry {
+  id: string;
+  title: string;
+  prompt: string;
+  description: string;
+  imageUrl: string;
+  referenceImages: string[];
+  referenceCount: number;
+  tags: string[];
+  createdAt: string;
+  createdBy: string;
+}
+
+function TabPrompts() {
+  const [prompts, setPrompts] = useState<PromptEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<PromptEntry | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  // Form state
+  const [formTitle, setFormTitle] = useState("");
+  const [formPrompt, setFormPrompt] = useState("");
+  const [formDesc, setFormDesc] = useState("");
+  const [formImageUrl, setFormImageUrl] = useState("");
+  const [formRefImages, setFormRefImages] = useState<string[]>([]);
+  const [formTags, setFormTags] = useState("");
+  const [formRefCount, setFormRefCount] = useState(1);
+  const [saving, setSaving] = useState(false);
+  const [uploadingMain, setUploadingMain] = useState(false);
+  const [uploadingRef, setUploadingRef] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch(`${BOT_API}/api/prompts`)
+      .then(r => r.json())
+      .then((data: PromptEntry[]) => { setPrompts(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const uploadImage = async (file: File, onUrl: (url: string) => void) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const r = await adminFetch(`${BOT_API}/api/upload`, { method: "POST", body: fd });
+      const d = await r.json();
+      if (d.url) onUrl(d.url);
+    } catch { /* ignore */ }
+  };
+
+  const handleSave = async () => {
+    if (!formTitle.trim() || !formPrompt.trim() || !formImageUrl) {
+      toast("error", "Título, prompt e imagem são obrigatórios."); return;
+    }
+    setSaving(true);
+    try {
+      const r = await adminFetch(`${BOT_API}/api/prompts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: formTitle.trim(),
+          prompt: formPrompt.trim(),
+          description: formDesc.trim(),
+          imageUrl: formImageUrl,
+          referenceImages: formRefImages.filter(Boolean),
+          referenceCount: formRefCount,
+          tags: formTags.split(",").map(t => t.trim()).filter(Boolean),
+        }),
+      });
+      const d = await r.json();
+      if (d.success && d.prompt) {
+        setPrompts(prev => [d.prompt, ...prev]);
+        toast("success", "Prompt salvo na biblioteca!");
+        setShowForm(false);
+        setFormTitle(""); setFormPrompt(""); setFormDesc(""); setFormImageUrl("");
+        setFormRefImages([]); setFormTags(""); setFormRefCount(1);
+      } else {
+        toast("error", d.error || "Erro ao salvar.");
+      }
+    } catch {
+      toast("error", "Bot offline.");
+    }
+    setSaving(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Remover este prompt da biblioteca?")) return;
+    try {
+      await adminFetch(`${BOT_API}/api/prompts/${id}`, { method: "DELETE" });
+      setPrompts(prev => prev.filter(p => p.id !== id));
+      if (selected?.id === id) setSelected(null);
+    } catch { toast("error", "Erro ao deletar."); }
+  };
+
+  const copyPrompt = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => toast("success", "Prompt copiado!")).catch(() => toast("error", "Erro ao copiar."));
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-bone">Biblioteca de Prompts</h2>
+          <p className="text-xs text-bone/40 mt-0.5">{prompts.length} prompt{prompts.length !== 1 ? "s" : ""} salvos</p>
+        </div>
+        <button type="button" onClick={() => setShowForm(v => !v)}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors",
+            showForm
+              ? "bg-white/5 border border-white/10 text-bone/60 hover:text-bone"
+              : "bg-crimson/10 border border-crimson/20 text-crimson hover:bg-crimson/20",
+          )}>
+          {showForm ? <><X className="w-4 h-4" /> Cancelar</> : <><Plus className="w-4 h-4" /> Adicionar Prompt</>}
+        </button>
+      </div>
+
+      {/* Add form */}
+      {showForm && (
+        <div className="bg-white/3 border border-white/8 rounded-xl p-5 space-y-4">
+          <p className="text-xs font-semibold text-bone/50 uppercase tracking-wider">Novo Prompt</p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Título">
+              <input value={formTitle} onChange={e => setFormTitle(e.target.value)}
+                placeholder="Ex: Sukuna no Templo — Cinematic" className={inputCls} maxLength={100} />
+            </Field>
+            <Field label="Tags (separadas por vírgula)">
+              <input value={formTags} onChange={e => setFormTags(e.target.value)}
+                placeholder="anime, portrait, cinematic" className={inputCls} />
+            </Field>
+          </div>
+
+          <Field label="Prompt completo">
+            <textarea value={formPrompt} onChange={e => setFormPrompt(e.target.value)}
+              placeholder="Raw digital cinema scan, exactly mimicking..." className={textareaCls} rows={6} />
+          </Field>
+
+          <Field label="Descrição / Notas (opcional)">
+            <textarea value={formDesc} onChange={e => setFormDesc(e.target.value)}
+              placeholder="Observações sobre o resultado, modelo usado, variações testadas..."
+              className={textareaCls} rows={3} />
+          </Field>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Imagem principal" tip="A imagem gerada pelo AI.">
+              <div className="flex gap-2">
+                <input value={formImageUrl} onChange={e => setFormImageUrl(e.target.value)}
+                  placeholder="https://..." className={inputCls} />
+                <label className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg bg-crimson/10 border border-crimson/20 text-crimson hover:bg-crimson/20 cursor-pointer transition-colors">
+                  {uploadingMain ? <span className="text-[9px]">...</span> : <Upload className="w-4 h-4" />}
+                  <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                    const f = e.target.files?.[0]; if (!f) return;
+                    setUploadingMain(true);
+                    await uploadImage(f, url => setFormImageUrl(url));
+                    setUploadingMain(false);
+                  }} />
+                </label>
+              </div>
+              {formImageUrl && (
+                <img src={formImageUrl} alt="" className="mt-2 w-full max-h-40 object-cover rounded-lg"
+                  onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+              )}
+            </Field>
+
+            <Field label="Fotos de referência usadas" tip="Quantas fotos do rosto foram usadas como referência.">
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-bone/50">Quantidade:</span>
+                  <input type="number" min={0} max={10} value={formRefCount}
+                    onChange={e => setFormRefCount(Number(e.target.value))}
+                    className={cn(inputCls, "w-20")} />
+                </div>
+                <p className="text-[10px] text-bone/30">Adicione URLs ou faça upload das fotos de referência:</p>
+                {[0, 1].map(i => (
+                  <div key={i} className="flex gap-2">
+                    <input value={formRefImages[i] || ""} onChange={e => {
+                        const next = [...formRefImages]; next[i] = e.target.value; setFormRefImages(next);
+                      }}
+                      placeholder={`Referência ${i + 1}...`} className={cn(inputCls, "text-xs")} />
+                    <label className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg bg-white/5 border border-white/10 text-bone/40 hover:bg-white/10 cursor-pointer transition-colors">
+                      {uploadingRef === i ? <span className="text-[9px]">...</span> : <Upload className="w-3.5 h-3.5" />}
+                      <input type="file" accept="image/*" className="hidden" onChange={async e => {
+                        const f = e.target.files?.[0]; if (!f) return;
+                        setUploadingRef(i);
+                        await uploadImage(f, url => {
+                          const next = [...formRefImages]; next[i] = url; setFormRefImages(next);
+                        });
+                        setUploadingRef(null);
+                      }} />
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </Field>
+          </div>
+
+          <button type="button" onClick={handleSave} disabled={saving}
+            className="w-full py-2.5 rounded-xl bg-crimson hover:bg-crimson/80 text-white font-semibold text-sm transition-colors disabled:opacity-50">
+            {saving ? "Salvando..." : "Salvar na Biblioteca"}
+          </button>
+        </div>
+      )}
+
+      {/* Grid of prompts */}
+      {loading ? (
+        <div className="text-center py-12 text-bone/30 text-sm">Carregando...</div>
+      ) : prompts.length === 0 ? (
+        <div className="text-center py-16 text-bone/30 bg-white/3 border border-white/8 rounded-xl">
+          <p className="text-4xl mb-3">🎨</p>
+          <p className="font-medium text-bone/50">Nenhum prompt na biblioteca ainda.</p>
+          <p className="text-xs mt-1">Clique em "Adicionar Prompt" para começar.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          {prompts.map(p => (
+            <div key={p.id}
+              className="group relative bg-white/3 border border-white/8 rounded-xl overflow-hidden hover:border-white/20 cursor-pointer transition-all hover:scale-[1.02]"
+              onClick={() => setSelected(p)}>
+              {/* Image */}
+              <div className="aspect-[3/4] overflow-hidden bg-white/5">
+                {p.imageUrl ? (
+                  <img src={p.imageUrl} alt={p.title} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-bone/20">
+                    <ImageIcon className="w-8 h-8" />
+                  </div>
+                )}
+              </div>
+              {/* Info overlay */}
+              <div className="p-3">
+                <p className="text-bone text-sm font-medium truncate">{p.title}</p>
+                {p.tags?.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {p.tags.slice(0, 3).map(tag => (
+                      <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-crimson/10 text-crimson/70">{tag}</span>
+                    ))}
+                  </div>
+                )}
+                {p.referenceCount > 0 && (
+                  <p className="text-[10px] text-bone/30 mt-1.5">📷 {p.referenceCount} foto{p.referenceCount !== 1 ? "s" : ""} de referência</p>
+                )}
+              </div>
+              {/* Delete button (visible on hover) */}
+              <button type="button"
+                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 rounded-lg bg-black/60 flex items-center justify-center text-red-400 hover:bg-red-500/20"
+                onClick={e => { e.stopPropagation(); handleDelete(p.id); }}>
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Modal / Lightbox */}
+      {selected && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          onClick={() => setSelected(null)}
+        >
+          {/* Blurred backdrop */}
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
+
+          {/* Modal content */}
+          <div
+            className="relative z-10 bg-[#111113] border border-white/10 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col sm:flex-row"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Image panel */}
+            <div className="sm:w-[55%] bg-black flex items-center justify-center">
+              <img src={selected.imageUrl} alt={selected.title}
+                className="w-full h-full object-contain max-h-[90vh]"
+                onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+            </div>
+
+            {/* Details panel */}
+            <div className="sm:w-[45%] flex flex-col overflow-y-auto">
+              {/* Header */}
+              <div className="flex items-start justify-between p-5 border-b border-white/8">
+                <div>
+                  <h2 className="text-bone font-semibold text-base leading-snug">{selected.title}</h2>
+                  {selected.tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {selected.tags.map(tag => (
+                        <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-crimson/10 text-crimson/80 border border-crimson/20">{tag}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button type="button" onClick={() => setSelected(null)}
+                  className="text-bone/40 hover:text-bone transition-colors ml-3 flex-shrink-0">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 p-5 space-y-5 overflow-y-auto">
+                {/* Reference images */}
+                {(selected.referenceImages?.length > 0 || selected.referenceCount > 0) && (
+                  <div>
+                    <p className="text-[10px] text-bone/40 uppercase tracking-wider mb-2">
+                      Fotos de referência usadas ({selected.referenceCount})
+                    </p>
+                    <div className="flex gap-2 flex-wrap">
+                      {selected.referenceImages?.map((url, i) => (
+                        <img key={i} src={url} alt={`ref ${i + 1}`}
+                          className="w-14 h-14 rounded-lg object-cover border border-white/10"
+                          onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                      ))}
+                      {(selected.referenceCount || 0) > (selected.referenceImages?.length || 0) && (
+                        <div className="w-14 h-14 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-xs text-bone/30">
+                          +{selected.referenceCount - (selected.referenceImages?.length || 0)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Description */}
+                {selected.description && (
+                  <div>
+                    <p className="text-[10px] text-bone/40 uppercase tracking-wider mb-1">Descrição</p>
+                    <p className="text-bone/70 text-sm leading-relaxed">{selected.description}</p>
+                  </div>
+                )}
+
+                {/* Prompt */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] text-bone/40 uppercase tracking-wider">Prompt</p>
+                    <button type="button" onClick={() => copyPrompt(selected.prompt)}
+                      className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-crimson/10 border border-crimson/20 text-crimson hover:bg-crimson/20 transition-colors">
+                      <Copy className="w-3 h-3" /> Copiar
+                    </button>
+                  </div>
+                  <div className="bg-black/40 border border-white/8 rounded-xl p-4">
+                    <p className="text-bone/70 text-sm leading-relaxed font-mono text-xs whitespace-pre-wrap">{selected.prompt}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer actions */}
+              <div className="p-4 border-t border-white/8 flex gap-2">
+                <a
+                  href={selected.imageUrl}
+                  download
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-white/5 border border-white/10 text-bone/60 hover:text-bone hover:bg-white/10 transition-colors text-sm"
+                >
+                  <Upload className="w-4 h-4 rotate-180" /> Baixar
+                </a>
+                <button type="button" onClick={() => copyPrompt(selected.prompt)}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-crimson/10 border border-crimson/20 text-crimson hover:bg-crimson/20 transition-colors text-sm">
+                  <Copy className="w-4 h-4" /> Copiar Prompt
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Embed Pagination Tab ─────────────────────────────────────────────────────
+interface PaginationPage {
+  id: string;
+  title: string;
+  description: string;
+  color: string;
+  image: string;
+  thumbnail: string;
+  authorName: string;
+  authorIcon: string;
+  footerText: string;
+}
+
+const DEFAULT_PAGE = (): PaginationPage => ({
+  id: Date.now().toString() + Math.random().toString(36).slice(2),
+  title: "",
+  description: "",
+  color: "#C41230",
+  image: "",
+  thumbnail: "",
+  authorName: "",
+  authorIcon: "",
+  footerText: "",
+});
+
+function TabPagination({ channels, guilds, roles }: { channels: Channel[]; guilds: Guild[]; roles: Role[] }) {
+  const [channelId, setChannelId] = useState("");
+  const [pages, setPages] = useState<PaginationPage[]>([DEFAULT_PAGE()]);
+  const [activePage, setActivePage] = useState(0);
+  const [prevEmoji, setPrevEmoji] = useState("⬅️");
+  const [nextEmoji, setNextEmoji] = useState("➡️");
+  const [headerMsg, setHeaderMsg] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const addPage = () => {
+    if (pages.length >= 10) { toast("warning", "Máximo de 10 páginas."); return; }
+    const newPage = DEFAULT_PAGE();
+    setPages(prev => [...prev, newPage]);
+    setActivePage(pages.length);
+  };
+
+  const removePage = (idx: number) => {
+    if (pages.length <= 1) { toast("warning", "Mínimo de 1 página."); return; }
+    setPages(prev => prev.filter((_, i) => i !== idx));
+    setActivePage(prev => Math.min(prev, pages.length - 2));
+  };
+
+  const updatePage = (idx: number, patch: Partial<PaginationPage>) =>
+    setPages(prev => prev.map((p, i) => i === idx ? { ...p, ...patch } : p));
+
+  const send = async () => {
+    if (!channelId) { toast("error", "Selecione um canal."); return; }
+    if (pages.length === 0) { toast("error", "Adicione pelo menos uma página."); return; }
+    setSending(true);
+    try {
+      const r = await adminFetch(`${BOT_API}/api/send-pagination`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channelId,
+          guildId: guilds[0]?.id,
+          pages: pages.map(p => ({
+            title: p.title || null,
+            description: p.description || null,
+            color: p.color,
+            image: p.image || null,
+            thumbnail: p.thumbnail || null,
+            authorName: p.authorName || null,
+            authorIcon: p.authorIcon || null,
+            footerText: p.footerText || null,
+          })),
+          prevEmoji,
+          nextEmoji,
+          headerMsg: headerMsg || null,
+        }),
+      });
+      const d = await r.json();
+      if (d.success) toast("success", `Paginação enviada! ${pages.length} páginas.`);
+      else toast("error", d.error || "Erro ao enviar.");
+    } catch {
+      toast("error", "Bot offline ou erro de conexão.");
+    }
+    setSending(false);
+  };
+
+  const currentPage = pages[activePage];
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 text-sm text-blue-300 space-y-1">
+        <p className="font-semibold">Embeds com Paginação</p>
+        <p className="text-xs text-blue-400/70">
+          Crie múltiplos embeds que o usuário navega com reações ⬅️ ➡️. Ideal para regras, tutoriais e guias com várias seções.
+        </p>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Left: config */}
+        <div className="space-y-5">
+          <Field label="Canal de destino">
+            <select value={channelId} onChange={e => setChannelId(e.target.value)} className={inputCls}>
+              <option value="">— Selecione um canal —</option>
+              {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </Field>
+
+          <Field label="Mensagem acima (opcional)" tip="Texto fixo enviado com o painel. Suporta markdown.">
+            <textarea value={headerMsg} onChange={e => setHeaderMsg(e.target.value)}
+              placeholder="Navegue pelas páginas com as reações abaixo 📖"
+              className={textareaCls} rows={2} maxLength={2000} />
+          </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Emoji — Página anterior">
+              <input value={prevEmoji} onChange={e => setPrevEmoji(e.target.value)}
+                placeholder="⬅️" className={cn(inputCls, "text-xl text-center")} maxLength={8} />
+            </Field>
+            <Field label="Emoji — Próxima página">
+              <input value={nextEmoji} onChange={e => setNextEmoji(e.target.value)}
+                placeholder="➡️" className={cn(inputCls, "text-xl text-center")} maxLength={8} />
+            </Field>
+          </div>
+
+          {/* Page tabs */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-bone/50 uppercase tracking-wider">Páginas ({pages.length}/10)</p>
+              <button type="button" onClick={addPage}
+                className="flex items-center gap-1.5 text-xs px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 transition-colors">
+                <Plus className="w-3 h-3" /> Nova Página
+              </button>
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {pages.map((_, idx) => (
+                <button key={idx} type="button"
+                  onClick={() => setActivePage(idx)}
+                  className={cn(
+                    "flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors border",
+                    activePage === idx
+                      ? "bg-crimson/20 border-crimson/40 text-crimson"
+                      : "bg-white/5 border-white/10 text-bone/50 hover:text-bone hover:bg-white/10",
+                  )}
+                >
+                  Pág {idx + 1}
+                  {pages.length > 1 && (
+                    <span className="ml-1 opacity-50 hover:opacity-100 hover:text-red-400"
+                      onClick={e => { e.stopPropagation(); removePage(idx); }}>×</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Active page editor */}
+          {currentPage && (
+            <div className="bg-white/3 border border-white/8 rounded-xl p-4 space-y-4">
+              <p className="text-xs font-semibold text-bone/40 uppercase tracking-wider">
+                Editando — Página {activePage + 1}
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Título">
+                  <VarInput value={currentPage.title}
+                    onChange={v => updatePage(activePage, { title: v })}
+                    placeholder="Título da página" className={inputCls} />
+                </Field>
+                <Field label="Cor da borda">
+                  <div className="flex gap-2 items-center">
+                    <input type="color" value={currentPage.color}
+                      onChange={e => updatePage(activePage, { color: e.target.value })}
+                      className="w-10 h-10 rounded cursor-pointer border-0 bg-transparent flex-shrink-0" />
+                    <input value={currentPage.color}
+                      onChange={e => updatePage(activePage, { color: e.target.value })}
+                      className={cn(inputCls, "font-mono")} placeholder="#C41230" />
+                  </div>
+                </Field>
+              </div>
+
+              <Field label="Descrição" tip="Suporta formatação Markdown do Discord.">
+                <VarTextarea value={currentPage.description}
+                  onChange={v => updatePage(activePage, { description: v })}
+                  placeholder="Conteúdo desta página..."
+                  className={textareaCls} rows={5} />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Imagem (URL)">
+                  <VarInput value={currentPage.image}
+                    onChange={v => updatePage(activePage, { image: v })}
+                    placeholder="https://..." className={inputCls} imageOnly />
+                </Field>
+                <Field label="Thumbnail (URL)">
+                  <VarInput value={currentPage.thumbnail}
+                    onChange={v => updatePage(activePage, { thumbnail: v })}
+                    placeholder="https://..." className={inputCls} imageOnly />
+                </Field>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Autor">
+                  <input value={currentPage.authorName}
+                    onChange={e => updatePage(activePage, { authorName: e.target.value })}
+                    placeholder="Nome do autor" className={inputCls} />
+                </Field>
+                <Field label="Footer">
+                  <VarInput value={currentPage.footerText}
+                    onChange={v => updatePage(activePage, { footerText: v })}
+                    placeholder="Página ${activePage+1}/${pages.length}" className={inputCls} />
+                </Field>
+              </div>
+            </div>
+          )}
+
+          <button type="button" onClick={send} disabled={sending}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-crimson rounded-xl text-white font-semibold hover:bg-crimson-light transition-colors disabled:opacity-50">
+            <Send className="w-4 h-4" />
+            {sending ? "Enviando..." : `Enviar Paginação (${pages.length} páginas)`}
+          </button>
+        </div>
+
+        {/* Right: preview */}
+        <div className="hidden lg:block">
+          <p className="text-xs font-semibold text-bone/40 uppercase tracking-wider mb-3">
+            Preview — Página {activePage + 1} de {pages.length}
+          </p>
+          <div className="sticky top-4 space-y-3">
+            {currentPage && (
+              <div className="bg-[#313338] rounded-lg p-4 font-sans">
+                <div className="flex gap-3">
+                  <div className="w-10 h-10 rounded-full bg-crimson flex items-center justify-center flex-shrink-0">
+                    <span className="text-white text-sm font-bold">I</span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <span className="text-white font-semibold text-sm">Itadori Bot</span>
+                      <span className="bg-[#5865F2] text-white text-[10px] font-medium px-1.5 py-px rounded">BOT</span>
+                    </div>
+                    {headerMsg && <p className="text-[#DBDEE1] text-sm mb-2">{headerMsg}</p>}
+                    <div className="rounded mt-1 overflow-hidden" style={{ backgroundColor: "#2B2D31", borderLeft: `4px solid ${currentPage.color || "#5865F2"}` }}>
+                      <div className="p-4 space-y-2">
+                        {currentPage.authorName && (
+                          <p className="text-[#F2F3F5] text-xs font-medium">{currentPage.authorName}</p>
+                        )}
+                        {currentPage.title && (
+                          <p className="text-[#F2F3F5] font-semibold text-sm">{currentPage.title}</p>
+                        )}
+                        {currentPage.description && (
+                          <p className="text-[#DBDEE1] text-sm leading-relaxed whitespace-pre-wrap">{currentPage.description}</p>
+                        )}
+                        {currentPage.image && (
+                          <img src={currentPage.image} alt="" className="mt-2 rounded max-w-full max-h-48 object-cover"
+                            onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                        )}
+                        {currentPage.footerText && (
+                          <p className="text-[#87898C] text-[11px] pt-1">{currentPage.footerText}</p>
+                        )}
+                      </div>
+                    </div>
+                    {/* Reaction navigation preview */}
+                    <div className="flex gap-2 mt-2">
+                      <div className="flex items-center gap-1 bg-[#2B2D31] border border-[#5865F2]/40 rounded-full px-3 py-1 text-sm">
+                        <span>{prevEmoji}</span>
+                        <span className="text-[#DBDEE1] text-xs">1</span>
+                      </div>
+                      <div className="flex items-center gap-1 bg-[#2B2D31] border border-white/10 rounded-full px-2 py-1">
+                        <span className="text-[#87898C] text-xs">{activePage + 1}/{pages.length}</span>
+                      </div>
+                      <div className="flex items-center gap-1 bg-[#2B2D31] border border-[#5865F2]/40 rounded-full px-3 py-1 text-sm">
+                        <span>{nextEmoji}</span>
+                        <span className="text-[#DBDEE1] text-xs">1</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* Page overview */}
+            <div className="bg-white/3 border border-white/8 rounded-xl p-3">
+              <p className="text-[10px] text-bone/30 uppercase tracking-wider mb-2">Todas as páginas</p>
+              <div className="space-y-1">
+                {pages.map((p, i) => (
+                  <button key={i} type="button" onClick={() => setActivePage(i)}
+                    className={cn(
+                      "w-full text-left px-2 py-1.5 rounded text-xs transition-colors flex items-center gap-2",
+                      activePage === i ? "bg-crimson/15 text-crimson" : "text-bone/40 hover:text-bone hover:bg-white/5",
+                    )}>
+                    <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: p.color }} />
+                    <span className="font-medium">Pág {i + 1}</span>
+                    <span className="truncate opacity-60">{p.title || p.description?.slice(0, 30) || "—"}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Sidebar Groups ────────────────────────────────────────────────────────
 interface SidebarItem { id: string; label: string; icon: React.ReactNode; }
 interface SidebarGroup { label: string; items: SidebarItem[]; }
@@ -3729,6 +4614,9 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     items: [
       { id: "embed",      label: "Embed Builder",   icon: <Send className="w-4 h-4" /> },
       { id: "buttons",    label: "Botões",           icon: <Zap className="w-4 h-4" /> },
+      { id: "reactions",  label: "Reações",          icon: <Smile className="w-4 h-4" /> },
+      { id: "pagination", label: "Paginação",        icon: <BookOpen className="w-4 h-4" /> },
+      { id: "prompts",    label: "Prompts IA",       icon: <ImageIcon className="w-4 h-4" /> },
       { id: "customcmds", label: "Comandos Pers.",  icon: <Terminal className="w-4 h-4" /> },
       { id: "commands",   label: "Comandos",         icon: <Hash className="w-4 h-4" /> },
     ],
@@ -4443,6 +5331,7 @@ export default function AdminPage() {
           {tab === "ia"         && <TabIA guilds={guildArr} />}
           {tab === "customcmds" && <TabCustomCmds guilds={guildArr} roles={roles} />}
           {tab === "servidores" && <TabServidores />}
+          {tab === "reactions"  && <TabReactions channels={channels} guilds={guildArr} roles={roles} />}
         </div>
       </div>
 
