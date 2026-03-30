@@ -498,6 +498,13 @@ function VarTextarea({
         onChange={ac.handleChange as React.ChangeEventHandler<HTMLTextAreaElement>}
         onClick={ac.handleClick as React.MouseEventHandler<HTMLTextAreaElement>}
         onKeyDown={ac.handleKeyDown}
+        onContextMenu={e => { e.preventDefault(); openContextMenu(e.clientX, e.clientY, e.currentTarget); }}
+        onPaste={e => {
+          if (Array.from(e.clipboardData.items).some(i => i.type.startsWith("image/"))) {
+            e.preventDefault();
+            toast("warning", "Colagem de imagem não suportada. Use o botão de upload 📎 para enviar imagens.", 10000);
+          }
+        }}
         placeholder={placeholder}
         className={className}
         rows={rows}
@@ -550,6 +557,13 @@ function VarInput({
         onChange={ac.handleChange as React.ChangeEventHandler<HTMLInputElement>}
         onClick={ac.handleClick as React.MouseEventHandler<HTMLInputElement>}
         onKeyDown={ac.handleKeyDown}
+        onContextMenu={e => { e.preventDefault(); openContextMenu(e.clientX, e.clientY, e.currentTarget); }}
+        onPaste={e => {
+          if (Array.from(e.clipboardData.items).some(i => i.type.startsWith("image/"))) {
+            e.preventDefault();
+            toast("warning", "Colagem de imagem não suportada. Use o botão de upload 📎 para enviar imagens.", 10000);
+          }
+        }}
         placeholder={placeholder}
         className={cn(className, "w-full")}
       />
@@ -805,6 +819,275 @@ function ToastContainer() {
 const inputCls = "w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-bone placeholder-bone/30 focus:outline-none focus:border-crimson/50 transition-colors";
 const textareaCls = `${inputCls} resize-none min-h-[90px]`;
 
+// ─── Server Emoji Cache ───────────────────────────────────────────────────────
+interface ServerEmoji { id: string; name: string; animated: boolean; url: string; raw: string; }
+let _serverEmojis: ServerEmoji[] = [];
+let _emojiFetched = false;
+async function fetchServerEmojis(): Promise<ServerEmoji[]> {
+  if (_emojiFetched) return _serverEmojis;
+  try {
+    const r = await adminFetch(`${BOT_API}/api/emojis`);
+    _serverEmojis = await r.json();
+    _emojiFetched = true;
+  } catch { /* ignore */ }
+  return _serverEmojis;
+}
+
+// ─── Context Menu ─────────────────────────────────────────────────────────────
+interface ContextMenuState {
+  x: number; y: number;
+  inputEl: HTMLTextAreaElement | HTMLInputElement;
+}
+
+let _ctxSetter: ((s: ContextMenuState | null) => void) | null = null;
+function openContextMenu(x: number, y: number, el: HTMLTextAreaElement | HTMLInputElement) {
+  _ctxSetter?.({ x, y, inputEl: el });
+}
+
+function ContextMenuPortal() {
+  const [ctx, setCtx] = useState<ContextMenuState | null>(null);
+  const [tab, setTab] = useState<"format" | "vars" | "emojis">("format");
+  const [emojis, setEmojis] = useState<ServerEmoji[]>([]);
+  const [emojiSearch, setEmojiSearch] = useState("");
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { _ctxSetter = setCtx; return () => { _ctxSetter = null; }; }, []);
+
+  useEffect(() => {
+    if (!ctx) return;
+    let alive = true;
+    fetchServerEmojis().then(data => { if (alive) setEmojis(data); });
+    setTab("format");
+    setEmojiSearch("");
+    return () => { alive = false; };
+  }, [ctx]);
+
+  // Close on click outside or Escape
+  useEffect(() => {
+    if (!ctx) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setCtx(null);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setCtx(null); };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+  }, [ctx]);
+
+  const insertText = useCallback((before: string, after = "", insertOnly?: string) => {
+    if (!ctx) return;
+    const el = ctx.inputEl;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const val = el.value;
+    const selected = val.slice(start, end);
+    let newVal: string;
+    let newCursor: number;
+    if (insertOnly !== undefined) {
+      newVal = val.slice(0, start) + insertOnly + val.slice(end);
+      newCursor = start + insertOnly.length;
+    } else {
+      newVal = val.slice(0, start) + before + selected + after + val.slice(end);
+      newCursor = start + before.length + selected.length + after.length;
+    }
+    // Trigger React synthetic change
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      el.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+      "value"
+    )?.set;
+    nativeInputValueSetter?.call(el, newVal);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(newCursor, newCursor);
+    });
+    setCtx(null);
+  }, [ctx]);
+
+  if (!ctx) return null;
+
+  // Position clamping so menu doesn't go off screen
+  const menuW = 280, menuH = 340;
+  const left = Math.min(ctx.x, window.innerWidth - menuW - 8);
+  const top = Math.min(ctx.y, window.innerHeight - menuH - 8);
+
+  const filteredEmojis = emojiSearch
+    ? emojis.filter(e => e.name.toLowerCase().includes(emojiSearch.toLowerCase()))
+    : emojis;
+
+  return (
+    <div
+      ref={menuRef}
+      className="fixed z-[9999] bg-[#1a1b1e] border border-white/10 rounded-xl shadow-2xl overflow-hidden"
+      style={{ left, top, width: menuW }}
+      onContextMenu={e => e.preventDefault()}
+    >
+      {/* Tabs */}
+      <div className="flex border-b border-white/8">
+        {(["format", "vars", "emojis"] as const).map(t => (
+          <button key={t} type="button" onClick={() => setTab(t)}
+            className={cn(
+              "flex-1 py-1.5 text-[11px] font-medium transition-colors",
+              tab === t ? "text-crimson border-b-2 border-crimson" : "text-bone/40 hover:text-bone/70"
+            )}>
+            {t === "format" ? "Formatação" : t === "vars" ? "Variáveis" : "Emojis"}
+          </button>
+        ))}
+        <button type="button" onClick={() => setCtx(null)}
+          className="px-2 text-bone/30 hover:text-bone/70">
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+
+      <div className="max-h-72 overflow-y-auto p-2">
+        {tab === "format" && (
+          <div className="flex flex-wrap gap-1">
+            {MD_BUTTONS.map(btn => (
+              <button key={btn.title} type="button" title={btn.title}
+                onClick={() => {
+                  if (btn.insert) insertText("", "", btn.insert);
+                  else if (btn.wrap) insertText(btn.wrap[0], btn.wrap[1]);
+                  else if (btn.prefix) insertText(btn.prefix);
+                }}
+                className={cn(
+                  "px-2 py-1 text-xs rounded bg-white/5 hover:bg-crimson/20 border border-white/10 text-bone/70 hover:text-bone transition-colors",
+                  btn.bold && "font-bold", btn.italic && "italic", btn.underline && "underline"
+                )}>
+                {btn.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {tab === "vars" && (
+          <div className="space-y-1">
+            {ALL_VARS.map(v => (
+              <button key={v.tag} type="button" onClick={() => insertText("", "", v.tag)}
+                className="w-full text-left flex items-center justify-between gap-2 px-2 py-1.5 rounded hover:bg-white/5 transition-colors group">
+                <code className="text-crimson text-xs font-mono">{v.tag}</code>
+                <span className="text-bone/35 text-[10px] truncate group-hover:text-bone/60">{v.desc}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {tab === "emojis" && (
+          <div>
+            <input
+              value={emojiSearch}
+              onChange={e => setEmojiSearch(e.target.value)}
+              placeholder="Buscar emoji..."
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-xs text-bone placeholder-bone/30 focus:outline-none focus:border-crimson/50 mb-2"
+              autoFocus
+            />
+            {filteredEmojis.length === 0 && (
+              <p className="text-center text-bone/30 text-xs py-4">
+                {emojis.length === 0 ? "Bot offline ou sem emojis no servidor" : "Nenhum emoji encontrado"}
+              </p>
+            )}
+            <div className="grid grid-cols-6 gap-1">
+              {filteredEmojis.slice(0, 60).map(e => (
+                <button key={e.id} type="button" title={e.name}
+                  onClick={() => insertText("", "", e.raw)}
+                  className="w-9 h-9 rounded hover:bg-white/10 flex items-center justify-center transition-colors">
+                  <img src={e.url} alt={e.name} className="w-6 h-6 object-contain" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Components V2 Preview ────────────────────────────────────────────────────
+function ComponentsV2Preview({ embed, webhookName, webhookAvatar, gridImages }: {
+  embed: EmbedState; webhookName: string; webhookAvatar: string; gridImages: string[];
+}) {
+  const now = new Date();
+  const time = now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const accentColor = embed.color || "#8b0000";
+  const imgs = gridImages.filter(Boolean);
+
+  return (
+    <div className="bg-[#313338] rounded-lg p-4 font-sans min-h-[200px]">
+      {/* Message row */}
+      <div className="flex gap-3">
+        <div className="flex-shrink-0 w-10 h-10 rounded-full overflow-hidden bg-crimson flex items-center justify-center">
+          {webhookAvatar ? (
+            <img src={webhookAvatar} alt="" className="w-full h-full object-cover"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+          ) : (
+            <span className="text-white text-sm font-bold">{(webhookName || "B")[0].toUpperCase()}</span>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-white font-semibold text-sm">{webhookName || "Itadori Bot"}</span>
+            <span className="bg-[#5865F2] text-white text-[10px] font-medium px-1.5 py-px rounded">BOT</span>
+            <span className="text-[#87898C] text-xs">Hoje às {time}</span>
+          </div>
+
+          {/* Container V2 */}
+          <div className="rounded-lg overflow-hidden border border-white/5"
+            style={{ borderLeft: `4px solid ${accentColor}`, background: "#2B2D31" }}>
+            <div className="p-3 space-y-2">
+              {/* Title */}
+              {embed.title && (
+                <p className="text-[#F2F3F5] font-bold text-base"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(embed.title) }} />
+              )}
+              {/* Description */}
+              {embed.description && (
+                <p className="text-[#DBDEE1] text-sm leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(embed.description) }} />
+              )}
+
+              {/* MediaGallery grid */}
+              {imgs.length > 0 && (
+                <div className={cn(
+                  "grid gap-1 mt-2 rounded overflow-hidden",
+                  imgs.length === 1 && "grid-cols-1",
+                  imgs.length === 2 && "grid-cols-2",
+                  imgs.length >= 3 && "grid-cols-2",
+                )}>
+                  {imgs.slice(0, 4).map((url, idx) => (
+                    <div key={idx} className={cn(
+                      "relative overflow-hidden bg-black/30",
+                      imgs.length === 3 && idx === 0 && "col-span-2",
+                    )} style={{ aspectRatio: imgs.length === 1 ? "16/9" : "1/1" }}>
+                      <img src={url} alt={`img${idx + 1}`}
+                        className="w-full h-full object-cover"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = "0.3"; }} />
+                    </div>
+                  ))}
+                  {imgs.length > 4 && (
+                    <div className="flex items-center justify-center bg-black/50 text-white/60 text-sm font-bold"
+                      style={{ aspectRatio: "1/1" }}>
+                      +{imgs.length - 4}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Footer */}
+              {embed.footerText && (
+                <p className="text-[#87898C] text-[11px] pt-1 border-t border-white/5">{embed.footerText}</p>
+              )}
+            </div>
+          </div>
+
+          {/* V2 badge */}
+          <div className="mt-1.5 flex items-center gap-1">
+            <span className="text-[10px] text-purple-400/50">⚡ Components V2</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Log type colors and icons
 const LOG_COLORS: Record<string, string> = {
   COMMAND: "text-blue-400",
@@ -1008,6 +1291,9 @@ function TabEmbedBuilder({ channels, guilds, roles }: { channels: Channel[]; gui
   const [uploading, setUploading] = useState(false);
   const [extraImages, setExtraImages] = useState<string[]>(["", "", "", "", ""]);
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
+  const [useV2, setUseV2] = useState(false);
+  const [gridImages, setGridImages] = useState<string[]>(["", "", "", ""]);
+  const [uploadingGridIdx, setUploadingGridIdx] = useState<number | null>(null);
   const descRef = useRef<HTMLTextAreaElement>(null);
   const selectedGuild = guilds[0];
 
@@ -1068,6 +1354,20 @@ function TabEmbedBuilder({ channels, guilds, roles }: { channels: Channel[]; gui
   const setExtraImg = (idx: number, val: string) =>
     setExtraImages(prev => { const next = [...prev]; next[idx] = val; return next; });
 
+  const setGridImg = (idx: number, val: string) =>
+    setGridImages(prev => { const next = [...prev]; next[idx] = val; return next; });
+
+  const uploadGridImage = async (idx: number, file: File) => {
+    setUploadingGridIdx(idx);
+    const fd = new FormData(); fd.append("file", file);
+    try {
+      const r = await adminFetch(`${BOT_API}/api/upload`, { method: "POST", body: fd });
+      const d = await r.json();
+      if (d.url) setGridImages(prev => { const next = [...prev]; next[idx] = d.url; return next; });
+    } catch { /* ignore */ }
+    setUploadingGridIdx(null);
+  };
+
   const send = async () => {
     if (!channelId) { toast("error", "Selecione um canal primeiro."); return; }
     setSending(true);
@@ -1087,6 +1387,8 @@ function TabEmbedBuilder({ channels, guilds, roles }: { channels: Channel[]; gui
           avatar: webhookAvatar || null,
           extraImages: extraImages.filter(Boolean),
           cargoRoleId: cargoRoleId || null,
+          useComponentsV2: useV2,
+          gridImages: gridImages.filter(Boolean),
           fields: embed.fields
             .filter(f => f.name || f.value)
             .map(f => ({ name: f.name, value: f.value, inline: f.inline, separate: f.separate })),
@@ -1105,6 +1407,30 @@ function TabEmbedBuilder({ channels, guilds, roles }: { channels: Channel[]; gui
     <div className="grid lg:grid-cols-2 gap-6">
       {/* ── Left: Form ── */}
       <div className="space-y-5 overflow-y-auto max-h-[calc(100vh-200px)] pr-1">
+
+        {/* ── Mode toggle ── */}
+        <div className="flex items-center gap-3 p-3 bg-white/3 border border-white/8 rounded-xl">
+          <div className="flex-1">
+            <p className="text-xs font-semibold text-bone/80">Modo de envio</p>
+            <p className="text-[11px] text-bone/40 mt-0.5">
+              {useV2
+                ? "Components V2 — layout visual com grid de imagens (Discord nativo)"
+                : "Embed clássico — compatível com todos os clientes"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setUseV2(v => !v)}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all",
+              useV2
+                ? "bg-purple-500/20 border-purple-500/40 text-purple-300 hover:bg-purple-500/30"
+                : "bg-white/5 border-white/10 text-bone/50 hover:bg-white/10 hover:text-bone"
+            )}
+          >
+            {useV2 ? "⚡ V2 ativo" : "Embed clássico"}
+          </button>
+        </div>
 
         {/* Channel + Webhook identity */}
         <section className="bg-white/3 border border-white/8 rounded-xl p-4 space-y-3">
@@ -1173,7 +1499,27 @@ function TabEmbedBuilder({ channels, guilds, roles }: { channels: Channel[]; gui
               <VarInput value={embed.authorName} onChange={v => set("authorName", v)} placeholder="Itadori Bot" className={inputCls} />
             </Field>
             <Field label="Ícone do Autor (URL)" tip="URL da imagem. Use ${USER.PERFIL} para avatar do usuário.">
-              <VarInput value={embed.authorIcon} onChange={v => set("authorIcon", v)} placeholder="https://... ou ${USER.PERFIL}" className={inputCls} imageOnly />
+              <div className="flex gap-2 items-center">
+                <VarInput value={embed.authorIcon} onChange={v => set("authorIcon", v)} placeholder="https://... ou ${USER.PERFIL}" className={inputCls} imageOnly />
+                <label
+                  title="Upload de ícone do autor"
+                  className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg bg-white/5 border border-white/10 text-bone/40 hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <Upload className="w-4 h-4" />
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={async e => {
+                      const f = e.target.files?.[0]; if (!f) return;
+                      setUploading(true);
+                      const fd = new FormData(); fd.append("file", f);
+                      try {
+                        const r = await adminFetch(`${BOT_API}/api/upload`, { method: "POST", body: fd });
+                        const d = await r.json();
+                        if (d.url) set("authorIcon", d.url);
+                      } catch { /* ignore */ }
+                      setUploading(false);
+                    }} />
+                </label>
+              </div>
             </Field>
           </div>
           <Field label="URL do Autor (clicável)">
@@ -1416,28 +1762,93 @@ function TabEmbedBuilder({ channels, guilds, roles }: { channels: Channel[]; gui
           </label>
         </section>
 
+        {/* Grid Images (Components V2 only) */}
+        {useV2 && (
+          <section className="bg-purple-500/5 border border-purple-500/20 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-purple-300/80 uppercase tracking-wider">Grid de Imagens — MediaGallery</p>
+              <span className="text-[10px] text-purple-300/40 bg-purple-500/10 px-2 py-0.5 rounded-full">
+                {gridImages.filter(Boolean).length}/4 imagens
+              </span>
+            </div>
+            <p className="text-[11px] text-bone/40">
+              Imagens dispostas em grid nativo do Discord. Deixe em branco para usar as imagens dos campos acima.
+            </p>
+            <div className="grid grid-cols-1 gap-2">
+              {gridImages.map((url, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                  <span className="text-[10px] font-mono text-purple-400/60 w-5 flex-shrink-0">{idx + 1}</span>
+                  <input
+                    value={url}
+                    onChange={e => setGridImg(idx, e.target.value)}
+                    placeholder={`URL da imagem ${idx + 1}...`}
+                    className={cn(inputCls, "flex-1")}
+                  />
+                  <label
+                    title={`Upload imagem ${idx + 1}`}
+                    className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition-colors cursor-pointer"
+                  >
+                    {uploadingGridIdx === idx ? <span className="text-[9px]">...</span> : <Upload className="w-4 h-4" />}
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadGridImage(idx, f); }} />
+                  </label>
+                  {url && (
+                    <button type="button" onClick={() => setGridImg(idx, "")}
+                      className="flex-shrink-0 text-bone/30 hover:text-red-400 transition-colors">
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {gridImages.some(Boolean) && (
+              <div className="flex gap-2 flex-wrap">
+                {gridImages.map((url, idx) => url ? (
+                  <img key={idx} src={url} alt={`Grid ${idx + 1}`}
+                    className="w-16 h-16 rounded object-cover border border-purple-500/20"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = "0.3"; }} />
+                ) : null)}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* Send */}
         <div className="space-y-2 pb-6">
           <button type="button" onClick={send} disabled={sending}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-crimson rounded-xl text-white font-semibold hover:bg-crimson-light transition-colors disabled:opacity-50">
+            className={cn(
+              "w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white font-semibold transition-colors disabled:opacity-50",
+              useV2 ? "bg-purple-600 hover:bg-purple-500" : "bg-crimson hover:bg-crimson-light"
+            )}>
             <Send className="w-4 h-4" />
-            {sending ? "Enviando..." : "Enviar Embed"}
+            {sending ? "Enviando..." : useV2 ? "Enviar Components V2" : "Enviar Embed"}
           </button>
         </div>
       </div>
 
       {/* ── Right: Discord Preview ── */}
       <div className="hidden lg:block">
-        <p className="text-xs font-semibold text-bone/40 uppercase tracking-wider mb-3">Preview — Discord</p>
+        <p className="text-xs font-semibold text-bone/40 uppercase tracking-wider mb-3">
+          Preview — {useV2 ? <span className="text-purple-400">Components V2</span> : "Discord"}
+        </p>
         <div className="sticky top-4">
-          <DiscordPreview
-            embed={embed}
-            webhookName={webhookName}
-            webhookAvatar={webhookAvatar}
-            guildName={selectedGuild?.name}
-            extraImages={extraImages}
-            cargoMention={cargoRoleId ? `@${roles.find(r => r.id === cargoRoleId)?.name || "Cargo"}` : "@Cargo"}
-          />
+          {useV2 ? (
+            <ComponentsV2Preview
+              embed={embed}
+              webhookName={webhookName}
+              webhookAvatar={webhookAvatar}
+              gridImages={gridImages}
+            />
+          ) : (
+            <DiscordPreview
+              embed={embed}
+              webhookName={webhookName}
+              webhookAvatar={webhookAvatar}
+              guildName={selectedGuild?.name}
+              extraImages={extraImages}
+              cargoMention={cargoRoleId ? `@${roles.find(r => r.id === cargoRoleId)?.name || "Cargo"}` : "@Cargo"}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -5332,6 +5743,8 @@ export default function AdminPage() {
           {tab === "customcmds" && <TabCustomCmds guilds={guildArr} roles={roles} />}
           {tab === "servidores" && <TabServidores />}
           {tab === "reactions"  && <TabReactions channels={channels} guilds={guildArr} roles={roles} />}
+          {tab === "pagination" && <TabPagination channels={channels} guilds={guildArr} roles={roles} />}
+          {tab === "prompts"    && <TabPrompts />}
         </div>
       </div>
 
@@ -5340,6 +5753,9 @@ export default function AdminPage() {
 
       {/* Toast Notifications */}
       <ToastContainer />
+
+      {/* Context Menu */}
+      <ContextMenuPortal />
     </div>
   );
 }
