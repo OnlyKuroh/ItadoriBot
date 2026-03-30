@@ -1283,6 +1283,7 @@ const DEFAULT_EMBED: EmbedState = {
 };
 
 function TabEmbedBuilder({ channels, guilds, roles }: { channels: Channel[]; guilds: Guild[]; roles: Role[]; }) {
+  const [subTab, setSubTab] = useState<"embed" | "reactions" | "pagination">("embed");
   const [embed, setEmbed] = useState<EmbedState>(DEFAULT_EMBED);
   const [channelId, setChannelId] = useState("");
   const [webhookName, setWebhookName] = useState("Itadori Bot");
@@ -1404,7 +1405,38 @@ function TabEmbedBuilder({ channels, guilds, roles }: { channels: Channel[]; gui
   };
 
   return (
-    <div className="grid lg:grid-cols-2 gap-6">
+    <div className="space-y-0">
+      {/* ── Sub-tab bar ── */}
+      <div className="flex gap-1 border-b border-white/8 mb-6">
+        {([
+          { id: "embed",      label: "Embed",     icon: <Send className="w-3.5 h-3.5" /> },
+          { id: "reactions",  label: "Reações",   icon: <Smile className="w-3.5 h-3.5" /> },
+          { id: "pagination", label: "Paginação", icon: <BookOpen className="w-3.5 h-3.5" /> },
+        ] as const).map(t => (
+          <button key={t.id} type="button" onClick={() => setSubTab(t.id)}
+            className={cn(
+              "flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px",
+              subTab === t.id
+                ? "border-crimson text-bone"
+                : "border-transparent text-bone/40 hover:text-bone/70",
+            )}>
+            {t.icon}{t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Sub-tab: Reações ── */}
+      {subTab === "reactions" && (
+        <TabReactions channels={channels} guilds={guilds} roles={roles} />
+      )}
+
+      {/* ── Sub-tab: Paginação ── */}
+      {subTab === "pagination" && (
+        <TabPagination channels={channels} guilds={guilds} roles={roles} />
+      )}
+
+      {/* ── Sub-tab: Embed ── */}
+      {subTab === "embed" && <div className="grid lg:grid-cols-2 gap-6">
       {/* ── Left: Form ── */}
       <div className="space-y-5 overflow-y-auto max-h-[calc(100vh-200px)] pr-1">
 
@@ -1851,6 +1883,7 @@ function TabEmbedBuilder({ channels, guilds, roles }: { channels: Channel[]; gui
           )}
         </div>
       </div>
+      </div>}
     </div>
   );
 }
@@ -5025,8 +5058,6 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     items: [
       { id: "embed",      label: "Embed Builder",   icon: <Send className="w-4 h-4" /> },
       { id: "buttons",    label: "Botões",           icon: <Zap className="w-4 h-4" /> },
-      { id: "reactions",  label: "Reações",          icon: <Smile className="w-4 h-4" /> },
-      { id: "pagination", label: "Paginação",        icon: <BookOpen className="w-4 h-4" /> },
       { id: "prompts",    label: "Prompts IA",       icon: <ImageIcon className="w-4 h-4" /> },
       { id: "customcmds", label: "Comandos Pers.",  icon: <Terminal className="w-4 h-4" /> },
       { id: "commands",   label: "Comandos",         icon: <Hash className="w-4 h-4" /> },
@@ -5742,8 +5773,6 @@ export default function AdminPage() {
           {tab === "ia"         && <TabIA guilds={guildArr} />}
           {tab === "customcmds" && <TabCustomCmds guilds={guildArr} roles={roles} />}
           {tab === "servidores" && <TabServidores />}
-          {tab === "reactions"  && <TabReactions channels={channels} guilds={guildArr} roles={roles} />}
-          {tab === "pagination" && <TabPagination channels={channels} guilds={guildArr} roles={roles} />}
           {tab === "prompts"    && <TabPrompts />}
         </div>
       </div>
