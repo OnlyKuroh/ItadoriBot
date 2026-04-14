@@ -1,8 +1,7 @@
 <div align="center">
 
 <!-- BANNER -->
-<img src="https://capsule-render.vercel.app/api?type=waving&color=0:1a0533,50:4b0082,100:8b00ff&height=200&section=header&text=Itadori%20Bot&fontSize=60&fontColor=ffffff&fontAlignY=38&desc=O%20bot%20que%20não%20rejeita%20nenhum%20comando&descAlignY=58&descSize=16" width="100%"/>
-
+<img width="2720" height="960" alt="321" src="https://github.com/user-attachments/assets/fe0d67f1-1a57-4b47-8560-a4521fe367e1" />
 <br/>
 
 [![Discord.js](https://img.shields.io/badge/Discord.js-v14.19+-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.js.org)
@@ -18,12 +17,11 @@
 </div>
 
 ---
-
-## ⚡ Sobre o Projeto
-
-O **Itadori Bot** é um bot de Discord com a personalidade e energia de **Yuji Itadori** (Jujutsu Kaisen), construído com TypeScript moderno e arquitetura escalável. Vai além de comandos básicos — tem economia, XP, moderação e um sistema de logs digno de um Xamã Grau Especial.
-
-Construído usando os **Components V2 do Discord.js v14.19+**, sistema de banco de dados MongoDB e uma estrutura modular pensada para crescer.
+> [!IMPORTANT]
+> ### ⚡ Sobre o Projeto
+> O **Itadori Bot** é um bot de Discord com a personalidade e energia de **Yuji Itadori** (Jujutsu Kaisen), construído com TypeScript moderno e arquitetura escalável. Vai além de comandos básicos — tem economia, XP, moderação e um sistema de logs digno de um Xamã Grau Especial.
+> 
+> Construído usando os **Components V2 do Discord.js v14.19+**, sistema de banco de dados MongoDB e uma estrutura modular pensada para crescer.
 
 ---
 
